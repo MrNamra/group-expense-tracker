@@ -20,10 +20,11 @@ A full-featured, secure, and modern group expense tracker built in **PHP (8.x)**
    - Group owners can customize and change the currency anytime per group (e.g. `₹ (INR)`, `$ (USD)`, `€ (EUR)`, `£ (GBP)`, `¥ (JPY)`, `AED`, etc.) during group creation or editing.
    - All expense totals, participant shares, and settle-up calculations dynamically render using the selected group currency.
 
-4. **Searchable "Who Paid" Dropdown & Clean URLs**:
-   - Clean URL routing (`/dashboard`, `/group?id=1`, `/login`, `/register`, `/public?token=...`) without `.php` extensions.
-   - Interactive, real-time searchable dropdown for selecting payers when logging expenses.
-   - Custom Glassmorphic **404 Not Found** page for invalid URLs or missing groups.
+4. **Hand-Drawn Paper Theme (Neubrutalism)**:
+   - Playful hand-drawn notebook paper aesthetic with subtle gridlines, notebook red margin rules, and paper tape sticker details.
+   - Bold ink borders (`3px solid #1e293b`), tactile 3D pop shadows, interactive button press physics (`transform: translate`).
+   - Playful cartoon typography with Google Fonts **Fredoka** and handwritten **Kalam**.
+   - Fully responsive grid and flex layouts built for fluid rendering on all screen sizes (mobile phones, tablets, desktop).
 
 4. **Public Shareable Link**:
    - Owner can copy a unique tokenized URL (`/public.php?token=...`).
