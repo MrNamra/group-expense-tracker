@@ -1,0 +1,15 @@
+# Apache Rewrite Rules for Clean URLs without .php extension
+RewriteEngine On
+RewriteBase /
+
+# Stop processing if directory or file exists
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Redirect /index or /dashboard to root
+RewriteRule ^(index|dashboard)$ / [R=301,L]
+
+# Map clean URLs to .php files
+RewriteCond %{DOCUMENT_ROOT}/$1.php -f
+RewriteRule ^([^/]+)/?$ $1.php [L,QSA]
