@@ -26,6 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$pageTitle = "User Login";
+$pageDescription = "Log in to your SplitWise PRO account to manage group expenses and settlements.";
+
 require_once __DIR__ . '/includes/header.php';
 ?>
 

@@ -6,7 +6,8 @@ requireLogin();
 
 $currentUser = getCurrentUser();
 $groups = getUserGroups($currentUser['id']);
-$msg = $_GET['msg'] ?? '';
+$pageTitle = "Dashboard";
+$pageDescription = "Manage your group expenses, split bills, and track settlements effortlessly.";
 
 require_once __DIR__ . '/includes/header.php';
 ?>

@@ -21,6 +21,9 @@ $stats = calculateGroupStats($groupId);
 
 $publicUrl = APP_URL . "/public?token=" . urlencode($group['share_token']);
 
+$pageTitle = $group['name'];
+$pageDescription = "Track expenses, split bills, and view debt settlements for " . $group['name'] . ".";
+
 require_once __DIR__ . '/includes/header.php';
 ?>
 

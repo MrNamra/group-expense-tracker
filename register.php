@@ -19,13 +19,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $result = registerUser($username, $email, $password);
         if ($result['success']) {
-            header("Location: dashboard?msg=" . urlencode("Welcome to SplitWise PRO! Account created successfully."));
+            header("Location: login?msg=" . urlencode("Account created successfully! Please log in with your credentials."));
             exit;
         } else {
             $error = $result['message'];
         }
     }
 }
+
+$pageTitle = "Create Account";
+$pageDescription = "Sign up for SplitWise PRO to start creating expense groups and splitting bills seamlessly.";
 
 require_once __DIR__ . '/includes/header.php';
 ?>

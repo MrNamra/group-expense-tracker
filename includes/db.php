@@ -54,6 +54,13 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );",
 
+            "CREATE TABLE IF NOT EXISTS login_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip_address VARCHAR(45) NOT NULL,
+                username_input VARCHAR(100) NOT NULL,
+                attempt_time DATETIME DEFAULT CURRENT_TIMESTAMP
+            );",
+
             "CREATE TABLE IF NOT EXISTS groups (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 owner_id INTEGER NOT NULL,
@@ -105,6 +112,13 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
                 email VARCHAR(100) NOT NULL UNIQUE,
                 password VARCHAR(255) NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+
+            "CREATE TABLE IF NOT EXISTS login_attempts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                ip_address VARCHAR(45) NOT NULL,
+                username_input VARCHAR(100) NOT NULL,
+                attempt_time DATETIME DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
 
             "CREATE TABLE IF NOT EXISTS `groups` (

@@ -2,7 +2,7 @@
 
 <footer>
     <div class="container">
-        <p>&copy; <?= date('Y') ?> <strong><?= e(APP_NAME) ?></strong>.</p>
+        <p>&copy; <?= date('Y') ?> <strong><?= e(APP_NAME) ?></strong>. Dynamic Group Expense Tracker & Settle-up Calculator.</p>
     </div>
 </footer>
 

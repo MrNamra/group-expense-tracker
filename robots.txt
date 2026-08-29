@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Allow: /public
+Allow: /login
+Allow: /register
+
+Disallow: /add_expense
+Disallow: /edit_expense
+Disallow: /delete_expense
+Disallow: /add_participant
+Disallow: /delete_participant
+
+Sitemap: http://localhost:8000/sitemap.xml

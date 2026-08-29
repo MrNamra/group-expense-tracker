@@ -15,8 +15,8 @@ $participants = getGroupParticipants($groupId);
 $expenses = getGroupExpenses($groupId);
 $stats = calculateGroupStats($groupId);
 
-$currentUser = getCurrentUser();
-$isOwner = $currentUser && isGroupOwner($groupId, $currentUser['id']);
+$pageTitle = $group['name'] . " (Public View)";
+$pageDescription = "Public shared view for " . $group['name'] . " expenses, individual balance summaries, and settlement calculations.";
 
 require_once __DIR__ . '/includes/header.php';
 ?>
