@@ -20,7 +20,7 @@ $ogImage = $canonicalBase . '/og-image.png';
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
     <!-- ── Primary SEO Meta Tags ── -->
     <title><?= e($title) ?></title>
@@ -107,6 +107,7 @@ $ogImage = $canonicalBase . '/og-image.png';
                     <span>Logged in as <strong><?= e($currentUser['username']) ?></strong></span>
                 </div>
                 <a href="dashboard" class="btn btn-secondary btn-sm" id="nav-link-dashboard">Dashboard</a>
+                <a href="contacts" class="btn btn-secondary btn-sm" id="nav-link-contacts">👥 Friends</a>
                 <a href="logout" class="btn btn-danger btn-sm" id="nav-link-logout">Logout</a>
             <?php else: ?>
                 <a href="login" class="btn btn-secondary btn-sm" id="nav-link-login">Login</a>

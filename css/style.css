@@ -1690,7 +1690,169 @@ footer {
     box-shadow: 3px 3px 0px var(--border-ink);
 }
 
-/* Complete Mobile & Universal Tablet Responsiveness */
+/* ===================== CONTACTS & FRIENDS MANAGEMENT SCREEN ===================== */
+.contacts-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.contacts-header-info {
+    flex: 1;
+    min-width: 240px;
+}
+
+.add-friend-card {
+    background: #fdf4ff !important;
+    border: 2px solid var(--border-ink) !important;
+    border-radius: var(--radius-md) !important;
+    padding: 1.25rem !important;
+    margin-bottom: 1.5rem !important;
+    box-shadow: var(--shadow-pop) !important;
+}
+
+.contact-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.contacts-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.contacts-search-box {
+    flex: 1;
+    min-width: 200px;
+}
+
+.contacts-count-badge {
+    background: var(--bg-card-alt);
+    border: 2px solid var(--border-ink);
+    border-radius: var(--radius-full);
+    padding: 0.4rem 0.85rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    white-space: nowrap;
+    box-shadow: 2px 2px 0px var(--border-ink);
+}
+
+.contacts-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.85rem;
+}
+
+.contact-record-card {
+    background: #ffffff;
+    border: 2px solid var(--border-ink);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1rem;
+    box-shadow: var(--shadow-pop-sm);
+    transition: var(--transition);
+}
+
+.contact-record-card:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0px var(--border-ink);
+}
+
+.contact-card-top {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+}
+
+.contact-avatar-lg {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #8b5cf6, #ec4899);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-heading);
+    font-size: 1.2rem;
+    font-weight: 700;
+    border: 2px solid var(--border-ink);
+    box-shadow: 2px 2px 0px var(--border-ink);
+    flex-shrink: 0;
+}
+
+.contact-card-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.contact-card-name {
+    font-size: 0.98rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.contact-card-upi {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #059669;
+    background: #ecfdf5;
+    border: 1.5px solid #a7f3d0;
+    border-radius: var(--radius-sm);
+    padding: 0.15rem 0.45rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.btn-copy-upi {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.72rem;
+    line-height: 1;
+}
+
+.contact-card-no-upi {
+    font-size: 0.74rem;
+    color: var(--text-dim);
+    font-style: italic;
+}
+
+.contact-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+/* Complete Mobile & Universal Tablet Responsiveness (iPhone 15 / 16 / 17 Optimized) */
+html, body {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+}
+
 @media (max-width: 992px) {
     .group-content-grid {
         grid-template-columns: 1fr;
@@ -1702,45 +1864,65 @@ footer {
 
 @media (max-width: 768px) {
     .nav-container {
-        padding: 0.85rem 1rem;
+        padding: 0.75rem 0.85rem;
         flex-direction: column;
         align-items: stretch;
+        gap: 0.5rem;
     }
 
     .nav-links {
+        display: flex;
+        align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.4rem;
         width: 100%;
-        margin-top: 0.5rem;
+        margin-top: 0.25rem;
+    }
+
+    .nav-links .btn {
+        padding: 0.35rem 0.65rem;
+        font-size: 0.8rem;
+        flex: 1 1 auto;
+        text-align: center;
     }
 
     .user-badge {
         width: 100%;
         justify-content: center;
         margin-bottom: 0.25rem;
+        font-size: 0.8rem;
+        padding: 0.35rem 0.7rem;
     }
 
     .main-wrapper {
         padding: 0 0.75rem;
         margin: 1rem auto;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     .page-header {
         flex-direction: column;
         align-items: stretch;
+        gap: 0.5rem;
     }
 
     .page-title {
-        font-size: 1.75rem;
+        font-size: 1.65rem;
+        word-break: break-word;
     }
 
     .banner-top {
         flex-direction: column;
         align-items: stretch;
+        gap: 0.75rem;
     }
 
     .banner-actions {
         flex-direction: column;
         align-items: stretch;
+        gap: 0.5rem;
     }
 
     .owner-action-btns {
@@ -1749,36 +1931,52 @@ footer {
 
     .share-box {
         width: 100%;
+        max-width: 100%;
+        min-width: 0;
     }
 
     .share-input {
         flex: 1;
         min-width: 0;
+        font-size: 0.8rem;
     }
 
-    /* Expenses frame mobile height */
     .expenses-scroll-frame {
-        max-height: 340px;
+        max-height: 320px;
+        padding: 0.75rem;
     }
 
     .expense-item {
+        flex-wrap: wrap;
+        padding: 0.75rem 0.85rem;
         gap: 0.5rem;
     }
 
+    .expense-info {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
     .expense-title {
-        max-width: 150px;
+        max-width: 100%;
+        white-space: normal;
+        word-break: break-word;
+        font-size: 0.92rem;
     }
 
     .expense-sub {
-        max-width: 160px;
+        max-width: 100%;
+        white-space: normal;
+        word-break: break-word;
+        font-size: 0.76rem;
     }
 
     .expense-actions {
-        justify-content: flex-end;
+        margin-left: auto;
     }
 
     .card {
-        padding: 1.2rem;
+        padding: 1rem;
     }
 
     .groups-grid {
@@ -1788,29 +1986,41 @@ footer {
     .settlement-item {
         flex-direction: column;
         align-items: stretch;
+        padding: 0.75rem;
     }
 
     .settlement-right {
         justify-content: flex-start;
-        margin-top: 0.4rem;
+        margin-top: 0.35rem;
     }
 
     .summary-amount {
-        font-size: 1.7rem;
+        font-size: 1.6rem;
+    }
+
+    .contact-form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .contacts-cards-grid {
+        grid-template-columns: 1fr;
     }
 }
 
 @media (max-width: 480px) {
     .main-wrapper {
-        padding: 0 0.6rem;
+        padding: 0 0.5rem;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     .group-header-banner {
-        padding: 1.2rem;
+        padding: 1rem 0.85rem;
     }
 
     .expenses-scroll-frame {
-        max-height: 300px;
+        max-height: 280px;
+        padding: 0.6rem;
     }
 
     .upi-qr-img {
@@ -1819,7 +2029,15 @@ footer {
     }
 
     .balance-table {
-        font-size: 0.78rem;
+        font-size: 0.76rem;
+    }
+
+    .table-responsive,
+    .breakdown-scroll {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        display: block;
     }
 
     .user-badge span:first-child {

@@ -213,4 +213,192 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
     foreach ($queries as $sql) {
         $pdo->exec($sql);
     }
+
+    // Automatically check and apply column & table migrations
+    checkAndApplyMigrations($pdo, $driver);
 }
+
+/**
+ * Check and apply incremental database migrations (SQLite & MySQL compatible)
+ * Adds missing columns, missing tables, and syncs contacts without data loss.
+ */
+function checkAndApplyMigrations(PDO $pdo, string $driver): array {
+    $log = [];
+
+    // Helper: check if table exists
+    $hasTable = function(string $table) use ($pdo, $driver): bool {
+        try {
+            if ($driver === 'sqlite') {
+                $stmt = $pdo->prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = :t");
+                $stmt->execute([':t' => $table]);
+                return (bool)$stmt->fetchColumn();
+            } else {
+                $stmt = $pdo->prepare("
+                    SELECT COUNT(*) FROM information_schema.TABLES 
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t
+                ");
+                $stmt->execute([':t' => $table]);
+                return (int)$stmt->fetchColumn() > 0;
+            }
+        } catch (Exception $e) {
+            return false;
+        }
+    };
+
+    // Helper: check if column exists
+    $hasColumn = function(string $table, string $column) use ($pdo, $driver): bool {
+        try {
+            if ($driver === 'sqlite') {
+                $stmt = $pdo->query("PRAGMA table_info(`$table`)");
+                while ($col = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                    if (strcasecmp($col['name'], $column) === 0) return true;
+                }
+                return false;
+            } else {
+                $stmt = $pdo->prepare("
+                    SELECT COUNT(*) FROM information_schema.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column
+                ");
+                $stmt->execute([':table' => $table, ':column' => $column]);
+                return (int)$stmt->fetchColumn() > 0;
+            }
+        } catch (Exception $e) {
+            return false;
+        }
+    };
+
+    // ── 1. Migration: groups.upi_id column ──
+    if ($hasTable('groups') && !$hasColumn('groups', 'upi_id')) {
+        try {
+            $pdo->exec("ALTER TABLE `groups` ADD COLUMN upi_id VARCHAR(100) DEFAULT NULL");
+            $log[] = "Added column 'upi_id' to 'groups' table.";
+        } catch (Exception $e) {
+            $log[] = "Error adding upi_id to groups: " . $e->getMessage();
+        }
+    } else {
+        $log[] = "Column 'groups.upi_id' verified.";
+    }
+
+    // ── 2. Migration: participants.upi_id column ──
+    if ($hasTable('participants') && !$hasColumn('participants', 'upi_id')) {
+        try {
+            $pdo->exec("ALTER TABLE `participants` ADD COLUMN upi_id VARCHAR(100) DEFAULT NULL");
+            $log[] = "Added column 'upi_id' to 'participants' table.";
+        } catch (Exception $e) {
+            $log[] = "Error adding upi_id to participants: " . $e->getMessage();
+        }
+    } else {
+        $log[] = "Column 'participants.upi_id' verified.";
+    }
+
+    // ── 3. Migration: paid_settlements table ──
+    if (!$hasTable('paid_settlements')) {
+        try {
+            if ($driver === 'sqlite') {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS paid_settlements (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id INTEGER NOT NULL,
+                    from_name VARCHAR(100) NOT NULL,
+                    to_name VARCHAR(100) NOT NULL,
+                    paid_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+                );");
+            } else {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS paid_settlements (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    group_id INT NOT NULL,
+                    from_name VARCHAR(100) NOT NULL,
+                    to_name VARCHAR(100) NOT NULL,
+                    paid_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+            }
+            $log[] = "Created table 'paid_settlements'.";
+        } catch (Exception $e) {
+            $log[] = "Error creating table paid_settlements: " . $e->getMessage();
+        }
+    } else {
+        $log[] = "Table 'paid_settlements' verified.";
+    }
+
+    // ── 4. Migration: user_contacts table ──
+    if (!$hasTable('user_contacts')) {
+        try {
+            if ($driver === 'sqlite') {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS user_contacts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    upi_id VARCHAR(100) DEFAULT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    UNIQUE(user_id, name)
+                );");
+            } else {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS user_contacts (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    upi_id VARCHAR(100) DEFAULT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    UNIQUE KEY unique_user_contact (user_id, name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+            }
+            $log[] = "Created table 'user_contacts'.";
+        } catch (Exception $e) {
+            $log[] = "Error creating table user_contacts: " . $e->getMessage();
+        }
+    } else {
+        $log[] = "Table 'user_contacts' verified.";
+    }
+
+    // ── 5. Back-populate user_contacts from existing participants ──
+    try {
+        if ($hasTable('participants') && $hasTable('groups') && $hasTable('user_contacts') && $hasTable('users')) {
+            $stmt = $pdo->query("
+                SELECT p.name, p.upi_id, g.owner_id, u.username as owner_name
+                FROM participants p
+                JOIN `groups` g ON p.group_id = g.id
+                JOIN users u ON g.owner_id = u.id
+            ");
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $migratedContacts = 0;
+
+            foreach ($rows as $r) {
+                $pName = trim($r['name'] ?? '');
+                $oName = trim($r['owner_name'] ?? '');
+                $pUpi  = trim($r['upi_id'] ?? '');
+                $oId   = (int)$r['owner_id'];
+
+                if (!empty($pName) && strcasecmp($pName, $oName) !== 0) {
+                    // Check if contact already exists
+                    $cCheck = $pdo->prepare("SELECT id, upi_id FROM user_contacts WHERE user_id = :uid AND LOWER(name) = LOWER(:name)");
+                    $cCheck->execute([':uid' => $oId, ':name' => $pName]);
+                    $existing = $cCheck->fetch(PDO::FETCH_ASSOC);
+
+                    if (!$existing) {
+                        $cIns = $pdo->prepare("INSERT INTO user_contacts (user_id, name, upi_id) VALUES (:uid, :name, :upi)");
+                        $cIns->execute([':uid' => $oId, ':name' => $pName, ':upi' => $pUpi ?: null]);
+                        $migratedContacts++;
+                    } elseif (!empty($pUpi) && empty($existing['upi_id'])) {
+                        $cUpd = $pdo->prepare("UPDATE user_contacts SET upi_id = :upi WHERE id = :id");
+                        $cUpd->execute([':upi' => $pUpi, ':id' => $existing['id']]);
+                        $migratedContacts++;
+                    }
+                }
+            }
+
+            if ($migratedContacts > 0) {
+                $log[] = "Synced {$migratedContacts} existing participant(s) into universal contacts.";
+            } else {
+                $log[] = "Universal contacts are fully synced with existing participants.";
+            }
+        }
+    } catch (Exception $e) {
+        $log[] = "Contacts sync check: " . $e->getMessage();
+    }
+
+    return $log;
+}
+

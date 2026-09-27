@@ -64,23 +64,27 @@ function getUserContacts(int $userId): array {
     return $stmt->fetchAll();
 }
 
-// Save or update a contact for a user (upsert by name)
+// Save or update a contact for a user (universal driver-agnostic upsert)
 function saveUserContact(int $userId, string $name, string $upiId = ''): void {
     $name = trim($name);
     if (empty($name)) return;
+    $upiId = trim($upiId);
 
     $db = getDBConnection();
-    // Try insert; if name already exists for this user, update upi_id only if a new one is provided
-    $stmt = $db->prepare("
-        INSERT INTO user_contacts (user_id, name, upi_id)
-        VALUES (:uid, :name, :upi)
-        ON CONFLICT(user_id, name)
-        DO UPDATE SET upi_id = CASE
-            WHEN excluded.upi_id IS NOT NULL AND excluded.upi_id != '' THEN excluded.upi_id
-            ELSE user_contacts.upi_id
-        END
-    ");
-    $stmt->execute([':uid' => $userId, ':name' => $name, ':upi' => $upiId ?: null]);
+    // Check if contact already exists for this user
+    $checkStmt = $db->prepare("SELECT id, upi_id FROM user_contacts WHERE user_id = :uid AND LOWER(name) = LOWER(:name)");
+    $checkStmt->execute([':uid' => $userId, ':name' => $name]);
+    $existing = $checkStmt->fetch();
+
+    if ($existing) {
+        if (!empty($upiId)) {
+            $stmt = $db->prepare("UPDATE user_contacts SET upi_id = :upi WHERE id = :id");
+            $stmt->execute([':upi' => $upiId, ':id' => $existing['id']]);
+        }
+    } else {
+        $stmt = $db->prepare("INSERT INTO user_contacts (user_id, name, upi_id) VALUES (:uid, :name, :upi)");
+        $stmt->execute([':uid' => $userId, ':name' => $name, ':upi' => $upiId ?: null]);
+    }
 }
 
 // Update a contact's UPI ID (called when participant UPI is set)
@@ -90,6 +94,43 @@ function updateContactUpi(int $userId, string $name, string $upiId): void {
     $stmt->execute([':upi' => $upiId ?: null, ':uid' => $userId, ':name' => $name]);
     // Also insert if not exists
     saveUserContact($userId, $name, $upiId);
+}
+
+// Get a single contact by ID for a user
+function getUserContactById(int $userId, int $contactId): ?array {
+    $db = getDBConnection();
+    $stmt = $db->prepare("SELECT * FROM user_contacts WHERE id = :id AND user_id = :uid");
+    $stmt->execute([':id' => $contactId, ':uid' => $userId]);
+    $res = $stmt->fetch();
+    return $res ?: null;
+}
+
+// Update a contact's name and UPI ID
+function updateUserContact(int $userId, int $contactId, string $name, string $upiId): bool {
+    $name = trim($name);
+    if (empty($name)) return false;
+    $db = getDBConnection();
+    // Check if another contact of same user already has this name
+    $stmtCheck = $db->prepare("SELECT id FROM user_contacts WHERE user_id = :uid AND LOWER(name) = LOWER(:name) AND id != :id");
+    $stmtCheck->execute([':uid' => $userId, ':name' => $name, ':id' => $contactId]);
+    if ($stmtCheck->fetch()) {
+        return false; // Name conflict
+    }
+
+    $stmt = $db->prepare("UPDATE user_contacts SET name = :name, upi_id = :upi WHERE id = :id AND user_id = :uid");
+    return $stmt->execute([
+        ':name' => $name,
+        ':upi'  => trim($upiId) ?: null,
+        ':id'   => $contactId,
+        ':uid'  => $userId
+    ]);
+}
+
+// Delete a contact
+function deleteUserContact(int $userId, int $contactId): bool {
+    $db = getDBConnection();
+    $stmt = $db->prepare("DELETE FROM user_contacts WHERE id = :id AND user_id = :uid");
+    return $stmt->execute([':id' => $contactId, ':uid' => $userId]);
 }
 
 // ─── GROUP FUNCTIONS ──────────────────────────────────────────────────────
