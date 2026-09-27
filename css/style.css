@@ -1214,6 +1214,96 @@ select.form-control {
     text-align: center;
 }
 
+/* ===================== UPI PAYMENT APPS GRID ===================== */
+.upi-apps-section {
+    width: 100%;
+    margin-top: 0.85rem;
+    padding-top: 0.75rem;
+    border-top: 1.5px dashed rgba(30, 41, 59, 0.2);
+}
+
+.upi-apps-label {
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 0.55rem;
+    text-align: center;
+}
+
+.upi-apps-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.45rem;
+    width: 100%;
+}
+
+.upi-app-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.6rem;
+    min-height: 40px;
+    border: 2px solid var(--border-ink);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-decoration: none;
+    box-shadow: 2px 2px 0px var(--border-ink);
+    transition: all 0.15s ease;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.upi-app-btn:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0px var(--border-ink);
+}
+
+.upi-app-btn:active {
+    transform: translate(1px, 1px);
+    box-shadow: 1px 1px 0px var(--border-ink);
+}
+
+/* Specific App Themes */
+.upi-app-gpay {
+    background: #ffffff;
+    color: #1f2937;
+}
+
+.upi-app-phonepe {
+    background: #5f259f;
+    color: #ffffff;
+}
+
+.upi-app-paytm {
+    background: #002e6e;
+    color: #00b9f5;
+}
+
+.upi-app-bhim {
+    background: #005792;
+    color: #ffffff;
+}
+
+.upi-app-generic {
+    background: #1e293b;
+    color: #ffffff;
+    grid-column: span 2;
+}
+
+@media (max-width: 360px) {
+    .upi-apps-grid {
+        grid-template-columns: 1fr;
+    }
+    .upi-app-generic {
+        grid-column: span 1;
+    }
+}
+
 .no-upi-hint {
     display: inline-flex;
     align-items: center;
