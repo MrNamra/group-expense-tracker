@@ -209,3 +209,102 @@ function isGroupOwner(int $groupId, ?int $userId = null): bool {
     $stmt->execute([':group_id' => $groupId, ':owner_id' => $userId]);
     return (bool) $stmt->fetch();
 }
+
+// ─── ADMIN & IMPERSONATION SYSTEM ─────────────────────────────────────────
+
+// Check if a user is an administrator
+function isAdmin(?int $userId = null): bool {
+    if ($userId === null) {
+        if (!isLoggedIn()) return false;
+        // If currently impersonating, check if the actual admin user who initiated it was admin
+        if (!empty($_SESSION['admin_impersonator_id'])) {
+            return true;
+        }
+        $userId = (int)$_SESSION['user_id'];
+    }
+
+    $db = getDBConnection();
+    try {
+        $stmt = $db->prepare("SELECT is_admin FROM users WHERE id = :id");
+        $stmt->execute([':id' => $userId]);
+        $val = $stmt->fetchColumn();
+        return (int)$val === 1;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+// Guard: Require admin privileges or redirect
+function requireAdmin() {
+    requireLogin();
+    if (!isAdmin()) {
+        header("Location: dashboard?msg=" . urlencode("Access denied. Administrator privileges required."));
+        exit;
+    }
+}
+
+// Check if currently acting as another user via admin impersonation
+function isImpersonating(): bool {
+    return !empty($_SESSION['admin_impersonator_id']);
+}
+
+// Get the original admin details if currently impersonating
+function getImpersonatingAdmin(): ?array {
+    if (!isImpersonating()) return null;
+    return [
+        'id'       => $_SESSION['admin_impersonator_id'],
+        'username' => $_SESSION['admin_impersonator_username'] ?? 'Administrator'
+    ];
+}
+
+// Impersonate any user without their password
+function impersonateUser(int $targetUserId): array {
+    if (!isAdmin()) {
+        return ['success' => false, 'message' => 'Unauthorized. Admin access required.'];
+    }
+
+    $db = getDBConnection();
+    $stmt = $db->prepare("SELECT * FROM users WHERE id = :id");
+    $stmt->execute([':id' => $targetUserId]);
+    $targetUser = $stmt->fetch();
+
+    if (!$targetUser) {
+        return ['success' => false, 'message' => 'Target user not found.'];
+    }
+
+    // Keep track of the original admin ID if not already impersonating
+    if (empty($_SESSION['admin_impersonator_id'])) {
+        $_SESSION['admin_impersonator_id']       = $_SESSION['user_id'];
+        $_SESSION['admin_impersonator_username'] = $_SESSION['username'];
+    }
+
+    // Switch session to target user
+    $_SESSION['user_id']  = $targetUser['id'];
+    $_SESSION['username'] = $targetUser['username'];
+    $_SESSION['email']    = $targetUser['email'];
+
+    return ['success' => true, 'target_user' => $targetUser];
+}
+
+// Exit impersonation mode and return to original admin session
+function exitImpersonation(): bool {
+    if (empty($_SESSION['admin_impersonator_id'])) {
+        return false;
+    }
+
+    $adminId = (int)$_SESSION['admin_impersonator_id'];
+    $db = getDBConnection();
+    $stmt = $db->prepare("SELECT * FROM users WHERE id = :id");
+    $stmt->execute([':id' => $adminId]);
+    $adminUser = $stmt->fetch();
+
+    if ($adminUser) {
+        $_SESSION['user_id']  = $adminUser['id'];
+        $_SESSION['username'] = $adminUser['username'];
+        $_SESSION['email']    = $adminUser['email'];
+    }
+
+    unset($_SESSION['admin_impersonator_id'], $_SESSION['admin_impersonator_username']);
+    return true;
+}
+

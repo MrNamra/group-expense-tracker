@@ -104,10 +104,16 @@ $ogImage = $canonicalBase . '/og-image.png';
             <?php if (isLoggedIn()): ?>
                 <div class="user-badge" id="user-profile-badge">
                     <span>👤</span>
-                    <span>Logged in as <strong><?= e($currentUser['username']) ?></strong></span>
+                    <span><strong><?= e($currentUser['username']) ?></strong></span>
+                    <?php if (isAdmin()): ?>
+                        <span style="background:#7c3aed; color:#fff; font-size:0.68rem; font-weight:800; padding:0.1rem 0.35rem; border-radius:4px; margin-left:0.25rem;">ADMIN</span>
+                    <?php endif; ?>
                 </div>
                 <a href="dashboard" class="btn btn-secondary btn-sm" id="nav-link-dashboard">Dashboard</a>
                 <a href="contacts" class="btn btn-secondary btn-sm" id="nav-link-contacts">👥 Friends</a>
+                <?php if (isAdmin()): ?>
+                    <a href="admin" class="btn btn-primary btn-sm" id="nav-link-admin" style="background:#6d28d9; border-color:var(--border-ink);">🛡️ Admin</a>
+                <?php endif; ?>
                 <a href="logout" class="btn btn-danger btn-sm" id="nav-link-logout">Logout</a>
             <?php else: ?>
                 <a href="login" class="btn btn-secondary btn-sm" id="nav-link-login">Login</a>
@@ -116,5 +122,18 @@ $ogImage = $canonicalBase . '/og-image.png';
         </nav>
     </div>
 </header>
+
+<?php if (isImpersonating()): ?>
+    <div style="background:#fef08a; border-bottom:2px solid var(--border-ink); padding:0.5rem 1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; font-size:0.85rem; font-weight:700; z-index:99; position:relative;">
+        <div style="display:flex; align-items:center; gap:0.4rem;">
+            <span>⚠️</span>
+            <span>Acting as <strong><?= e($currentUser['username']) ?></strong> (Admin Impersonation Mode)</span>
+        </div>
+        <div style="display:flex; gap:0.4rem; align-items:center;">
+            <a href="admin" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding:0.25rem 0.6rem;">⚙️ Admin Panel</a>
+            <a href="admin?action=exit_impersonate" class="btn btn-danger btn-sm" style="font-size:0.75rem; padding:0.25rem 0.6rem;">↩ Exit Impersonation</a>
+        </div>
+    </div>
+<?php endif; ?>
 
 <main class="main-wrapper" id="main-content">
