@@ -3,11 +3,16 @@ Allow: /
 Allow: /public
 Allow: /login
 Allow: /register
+Allow: /sitemap.xml
 
 Disallow: /add_expense
 Disallow: /edit_expense
 Disallow: /delete_expense
 Disallow: /add_participant
 Disallow: /delete_participant
+Disallow: /delete_group
+Disallow: /mark_paid
+Disallow: /logout
+Disallow: /database/
 
-Sitemap: http://localhost:8000/sitemap.xml
+Sitemap: https://expenses.freedev.app/sitemap.xml

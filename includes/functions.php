@@ -16,6 +16,7 @@ function getGroupById(int $groupId): ?array {
     $group = $stmt->fetch();
     if ($group) {
         $group['currency'] = $group['currency'] ?: APP_CURRENCY_SYMBOL;
+        $group['upi_id'] = $group['upi_id'] ?? '';
     }
     return $group ?: null;
 }
@@ -53,8 +54,47 @@ function getUserGroups(int $userId): array {
     }
     return $groups;
 }
+// ─── USER CONTACTS (Universal Friends Book) ──────────────────────────────
 
-// Create new group
+// Get all contacts for a user (sorted alphabetically)
+function getUserContacts(int $userId): array {
+    $db = getDBConnection();
+    $stmt = $db->prepare("SELECT * FROM user_contacts WHERE user_id = :uid ORDER BY name ASC");
+    $stmt->execute([':uid' => $userId]);
+    return $stmt->fetchAll();
+}
+
+// Save or update a contact for a user (upsert by name)
+function saveUserContact(int $userId, string $name, string $upiId = ''): void {
+    $name = trim($name);
+    if (empty($name)) return;
+
+    $db = getDBConnection();
+    // Try insert; if name already exists for this user, update upi_id only if a new one is provided
+    $stmt = $db->prepare("
+        INSERT INTO user_contacts (user_id, name, upi_id)
+        VALUES (:uid, :name, :upi)
+        ON CONFLICT(user_id, name)
+        DO UPDATE SET upi_id = CASE
+            WHEN excluded.upi_id IS NOT NULL AND excluded.upi_id != '' THEN excluded.upi_id
+            ELSE user_contacts.upi_id
+        END
+    ");
+    $stmt->execute([':uid' => $userId, ':name' => $name, ':upi' => $upiId ?: null]);
+}
+
+// Update a contact's UPI ID (called when participant UPI is set)
+function updateContactUpi(int $userId, string $name, string $upiId): void {
+    $db = getDBConnection();
+    $stmt = $db->prepare("UPDATE user_contacts SET upi_id = :upi WHERE user_id = :uid AND name = :name");
+    $stmt->execute([':upi' => $upiId ?: null, ':uid' => $userId, ':name' => $name]);
+    // Also insert if not exists
+    saveUserContact($userId, $name, $upiId);
+}
+
+// ─── GROUP FUNCTIONS ──────────────────────────────────────────────────────
+
+
 function createGroup(int $ownerId, string $name, string $description, array $participantNames = [], string $currency = '₹'): int {
     $db = getDBConnection();
     $db->beginTransaction();
@@ -85,16 +125,29 @@ function createGroup(int $ownerId, string $name, string $description, array $par
             ':user_id' => $ownerId
         ]);
 
-        // Add additional participant names provided during group creation
-        foreach ($participantNames as $pName) {
-            $pName = trim($pName);
-            if (!empty($pName) && strtolower($pName) !== strtolower($owner['username'] ?? '')) {
-                $stmtPart->execute([
-                    ':group_id' => $groupId,
-                    ':name' => $pName,
-                    ':user_id' => null
-                ]);
+        // Add additional participants (support 'name||upi_id' packed format from contacts picker)
+        $stmtPartUpi = $db->prepare("INSERT INTO participants (group_id, name, upi_id, user_id) VALUES (:group_id, :name, :upi_id, NULL)");
+        foreach ($participantNames as $packed) {
+            $packed = trim($packed);
+            if (empty($packed)) continue;
+
+            // Unpack 'name||upi_id' if present (sent from contacts picker)
+            if (str_contains($packed, '||')) {
+                [$pName, $pUpi] = explode('||', $packed, 2);
+            } else {
+                $pName = $packed;
+                $pUpi  = '';
             }
+            $pName = trim($pName);
+            if (empty($pName) || strtolower($pName) === strtolower($owner['username'] ?? '')) continue;
+
+            $stmtPartUpi->execute([
+                ':group_id' => $groupId,
+                ':name'     => $pName,
+                ':upi_id'   => $pUpi ?: null
+            ]);
+            // Auto-save to owner's contact book
+            saveUserContact($ownerId, $pName, $pUpi);
         }
 
         $db->commit();
@@ -113,13 +166,13 @@ function getGroupParticipants(int $groupId): array {
     return $stmt->fetchAll();
 }
 
-// Add participant to group
-function addParticipant(int $groupId, string $name): bool {
+// Add participant to group — auto-saves to owner's contact book
+function addParticipant(int $groupId, string $name, string $upiId = ''): bool {
     $name = trim($name);
     if (empty($name)) return false;
 
     $db = getDBConnection();
-    
+
     // Check if participant already exists in group
     $stmt = $db->prepare("SELECT id FROM participants WHERE group_id = :group_id AND LOWER(name) = LOWER(:name)");
     $stmt->execute([':group_id' => $groupId, ':name' => $name]);
@@ -127,8 +180,20 @@ function addParticipant(int $groupId, string $name): bool {
         return false; // Duplicate name in group
     }
 
-    $stmt = $db->prepare("INSERT INTO participants (group_id, name) VALUES (:group_id, :name)");
-    return $stmt->execute([':group_id' => $groupId, ':name' => $name]);
+    $stmt = $db->prepare("INSERT INTO participants (group_id, name, upi_id) VALUES (:group_id, :name, :upi_id)");
+    $ok = $stmt->execute([':group_id' => $groupId, ':name' => $name, ':upi_id' => $upiId ?: null]);
+
+    // Auto-save to the group owner's contact list
+    if ($ok) {
+        $grpStmt = $db->prepare("SELECT owner_id FROM groups WHERE id = :gid");
+        $grpStmt->execute([':gid' => $groupId]);
+        $grp = $grpStmt->fetch();
+        if ($grp) {
+            saveUserContact((int)$grp['owner_id'], $name, $upiId);
+        }
+    }
+
+    return $ok;
 }
 
 // Delete participant from group (only if not used in expenses or splits)
@@ -303,22 +368,38 @@ function getGroupExpenses(int $groupId): array {
     return $expenses;
 }
 
+// Get paid settlements for a group
+function getPaidSettlements(int $groupId): array {
+    $db = getDBConnection();
+    $stmt = $db->prepare("SELECT from_name, to_name FROM paid_settlements WHERE group_id = :gid");
+    $stmt->execute([':gid' => $groupId]);
+    $rows = $stmt->fetchAll();
+    $keys = [];
+    foreach ($rows as $r) {
+        $keys[$r['from_name'] . '|||' . $r['to_name']] = true;
+    }
+    return $keys;
+}
+
 // Compute group statistics and debt settlements ("Who will pay to whom and how much")
-function calculateGroupStats(int $groupId): array {
+function calculateGroupStats(int $groupId, array $paidSettlements = []): array {
     $participants = getGroupParticipants($groupId);
     $expenses = getGroupExpenses($groupId);
 
     $totalExpense = 0.0;
     $balances = []; // participant_id => ['name' => ..., 'paid' => 0.0, 'share' => 0.0, 'net' => 0.0]
 
+    // Build name => upi_id map for quick lookup
+    $upiMap = [];
     foreach ($participants as $p) {
         $balances[$p['id']] = [
-            'id' => $p['id'],
-            'name' => $p['name'],
-            'paid' => 0.0,
+            'id'    => $p['id'],
+            'name'  => $p['name'],
+            'paid'  => 0.0,
             'share' => 0.0,
-            'net' => 0.0
+            'net'   => 0.0
         ];
+        $upiMap[$p['name']] = $p['upi_id'] ?? '';
     }
 
     foreach ($expenses as $e) {
@@ -355,7 +436,7 @@ function calculateGroupStats(int $groupId): array {
     }
 
     // Debt Simplification Algorithm
-    $settlements = []; // list of ['from' => name, 'to' => name, 'amount' => float]
+    $settlements = []; // list of ['from' => name, 'to' => name, 'amount' => float, 'paid' => bool]
 
     // Sort debtors and creditors descending by amount
     usort($debtors, fn($a, $b) => $b['amount'] <=> $a['amount']);
@@ -372,10 +453,13 @@ function calculateGroupStats(int $groupId): array {
         $payment = round($payment, 2);
 
         if ($payment > 0) {
+            $key = $debtor['name'] . '|||' . $creditor['name'];
             $settlements[] = [
-                'from' => $debtor['name'],
-                'to' => $creditor['name'],
-                'amount' => $payment
+                'from'   => $debtor['name'],
+                'to'     => $creditor['name'],
+                'amount' => $payment,
+                'paid'   => isset($paidSettlements[$key]),
+                'to_upi' => $upiMap[$creditor['name']] ?? ''
             ];
         }
 
@@ -391,8 +475,8 @@ function calculateGroupStats(int $groupId): array {
     }
 
     return [
-        'total_expense' => $totalExpense,
+        'total_expense'       => $totalExpense,
         'individual_balances' => array_values($balances),
-        'settlements' => $settlements
+        'settlements'         => $settlements
     ];
 }

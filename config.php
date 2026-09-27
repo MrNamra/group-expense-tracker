@@ -20,7 +20,7 @@ define('DB_SQLITE_PATH', __DIR__ . '/database/expense_tracker.sqlite');
 
 // Application General Settings
 define('APP_NAME', 'SplitWise PRO - Group Expense Tracker');
-define('APP_URL', 'http://localhost:8000');
+define('APP_URL', 'https://expenses.freedev.app');
 define('APP_CURRENCY_SYMBOL', '₹');
 
 // Supported Currencies List

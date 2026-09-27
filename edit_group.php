@@ -27,18 +27,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name = trim($_POST['name'] ?? '');
         $description = trim($_POST['description'] ?? '');
         $currency = trim($_POST['currency'] ?? '₹');
+        $upiId = trim($_POST['upi_id'] ?? '');
 
         if (empty($name)) {
             $error = 'Group name is required.';
         } else {
             $db = getDBConnection();
-            $stmt = $db->prepare("UPDATE groups SET name = :name, description = :description, currency = :currency WHERE id = :id AND owner_id = :owner_id");
+            $stmt = $db->prepare("UPDATE groups SET name = :name, description = :description, currency = :currency, upi_id = :upi_id WHERE id = :id AND owner_id = :owner_id");
             $stmt->execute([
-                ':name' => $name,
-                ':description' => $description,
-                ':currency' => $currency,
-                ':id' => $groupId,
-                ':owner_id' => $currentUser['id']
+                ':name'       => $name,
+                ':description'=> $description,
+                ':currency'   => $currency,
+                ':upi_id'     => $upiId,
+                ':id'         => $groupId,
+                ':owner_id'   => $currentUser['id']
             ]);
 
             header("Location: group?id=" . $groupId . "&msg=" . urlencode("Group details updated."));
@@ -86,6 +88,11 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-group">
                 <label class="form-label">Description</label>
                 <textarea name="description" class="form-control" rows="3"><?= e($_POST['description'] ?? $group['description']) ?></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">💳 UPI ID <small style="color: var(--text-muted); font-weight:400;">(for payment QR code)</small></label>
+                <input type="text" name="upi_id" class="form-control" value="<?= e($_POST['upi_id'] ?? $group['upi_id'] ?? '') ?>" placeholder="yourname@upi or phone@bank">
             </div>
 
             <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">

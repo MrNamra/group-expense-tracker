@@ -122,6 +122,9 @@ define('DB_PASS', 'your_password');
 
 Start PHP built-in web server inside project directory:
 ```bash
-php -S localhost:8000
+php -S localhost:8000 router.php
 ```
+*(Or simply `php -S 0.0.0.0:8000`)*
+
 Open `http://localhost:8000` in your web browser.
+

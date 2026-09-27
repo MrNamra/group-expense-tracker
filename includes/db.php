@@ -67,6 +67,8 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
                 name VARCHAR(100) NOT NULL,
                 description TEXT,
                 share_token VARCHAR(64) NOT NULL UNIQUE,
+                currency VARCHAR(10) DEFAULT '₹',
+                upi_id VARCHAR(100) DEFAULT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
             );",
@@ -76,6 +78,7 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
                 group_id INTEGER NOT NULL,
                 name VARCHAR(100) NOT NULL,
                 user_id INTEGER DEFAULT NULL,
+                upi_id VARCHAR(100) DEFAULT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -102,6 +105,25 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
                 split_amount DECIMAL(10,2) NOT NULL,
                 FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE,
                 FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE
+            );",
+
+            "CREATE TABLE IF NOT EXISTS paid_settlements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER NOT NULL,
+                from_name VARCHAR(100) NOT NULL,
+                to_name VARCHAR(100) NOT NULL,
+                paid_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+            );",
+
+            "CREATE TABLE IF NOT EXISTS user_contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                upi_id VARCHAR(100) DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(user_id, name)
             );"
         ];
     } else { // MySQL
@@ -127,6 +149,8 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
                 name VARCHAR(100) NOT NULL,
                 description TEXT,
                 share_token VARCHAR(64) NOT NULL UNIQUE,
+                currency VARCHAR(10) DEFAULT '₹',
+                upi_id VARCHAR(100) DEFAULT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
@@ -136,6 +160,7 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
                 group_id INT NOT NULL,
                 name VARCHAR(100) NOT NULL,
                 user_id INT DEFAULT NULL,
+                upi_id VARCHAR(100) DEFAULT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -162,6 +187,25 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
                 split_amount DECIMAL(10,2) NOT NULL,
                 FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE,
                 FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+
+            "CREATE TABLE IF NOT EXISTS paid_settlements (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                group_id INT NOT NULL,
+                from_name VARCHAR(100) NOT NULL,
+                to_name VARCHAR(100) NOT NULL,
+                paid_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+
+            "CREATE TABLE IF NOT EXISTS user_contacts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                upi_id VARCHAR(100) DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE KEY unique_user_contact (user_id, name)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
         ];
     }
