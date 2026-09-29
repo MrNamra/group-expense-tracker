@@ -127,8 +127,160 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
         </div>
 
+        <!-- Expense Summary -->
+        <div class="settlement-card" style="margin-top: 1.5rem;">
+            <h3 class="summary-section-title">📊 Expense Summary</h3>
+
+            <div class="summary-total-box">
+                <div class="summary-label">Total Group Expense</div>
+                <div class="summary-amount"><?= formatMoney($stats['total_expense'], $group['currency']) ?></div>
+            </div>
+
+            <!-- Settle Up Plan -->
+            <h4 class="settle-subtitle">🤝 Final Settle Up Plan</h4>
+
+            <?php if (empty($stats['settlements'])): ?>
+                <div class="settle-all-clear">✨ Everyone is settled up!</div>
+            <?php else: ?>
+                <?php $activePaymentApps = getActivePaymentApps(); ?>
+                <?php foreach ($stats['settlements'] as $idx => $st): ?>
+                    <?php
+                    $toUpi   = $st['to_upi'] ?? '';
+                    $hasUpi  = !empty($toUpi) && !$st['paid'];
+                    $upiParams = $hasUpi
+                        ? "pa=" . urlencode($toUpi) . "&pn=" . urlencode($st['to']) . "&cu=INR&am=" . number_format($st['amount'], 2, '.', '') . "&tn=" . urlencode($st['from'] . " pays " . $st['to'])
+                        : '';
+                    $upiStr     = $hasUpi ? "upi://pay?" . $upiParams : '';
+                    $gpayUrl    = $hasUpi ? "gpay://upi/pay?" . $upiParams : '';
+                    $phonepeUrl = $hasUpi ? "phonepe://pay?" . $upiParams : '';
+                    $paytmUrl   = $hasUpi ? "paytmmp://pay?" . $upiParams : '';
+                    $bhimUrl    = $hasUpi ? "bhim://pay?" . $upiParams : '';
+                    $qrUrl      = $hasUpi
+                        ? "https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=" . urlencode($upiStr)
+                        : '';
+                    ?>
+                    <div class="settlement-item <?= $st['paid'] ? 'settlement-paid' : '' ?>">
+                        <!-- Debtor → Creditor row -->
+                        <div class="settlement-main-row">
+                            <div class="settlement-info">
+                                <strong><?= e($st['from']) ?></strong>
+                                <span class="settlement-arrow">➔</span>
+                                <strong><?= e($st['to']) ?></strong>
+                            </div>
+                            <div class="settlement-right">
+                                <?php if ($st['paid']): ?>
+                                    <span class="paid-badge">✅ Paid</span>
+                                    <span class="settlement-amount strike"><?= $group['currency'] ?> 0.00</span>
+                                <?php else: ?>
+                                    <span class="settlement-amount"><?= formatMoney($st['amount'], $group['currency']) ?></span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <!-- Action row for settled items: Owner Undo Button -->
+                        <?php if ($st['paid']): ?>
+                            <?php if ($isOwner): ?>
+                                <div class="settlement-actions-row settlement-paid-actions" style="border-top:1px dashed #bbf7d0; justify-content:space-between;">
+                                    <span style="font-size:0.75rem; color:#15803d; font-weight:700;">Settlement completed</span>
+                                    <form action="mark_paid" method="POST" style="display:inline;">
+                                        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                                        <input type="hidden" name="action" value="unmark">
+                                        <input type="hidden" name="group_id" value="<?= $groupId ?>">
+                                        <input type="hidden" name="from_name" value="<?= e($st['from']) ?>">
+                                        <input type="hidden" name="to_name" value="<?= e($st['to']) ?>">
+                                        <button type="submit" class="btn btn-secondary btn-sm"
+                                                onclick="return confirm('Undo paid settlement for <?= e($st['from']) ?> to <?= e($st['to']) ?>?');"
+                                                style="font-size:0.75rem; padding:0.25rem 0.6rem; border-color:#86efac; background:#f0fdf4;">
+                                            ↩ Undo (Mark Unpaid)
+                                        </button>
+                                    </form>
+                                </div>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <!-- Action row: QR toggle + Pay btn + Mark paid -->
+                            <div class="settlement-actions-row">
+                                <?php if ($hasUpi): ?>
+                                    <button class="btn-qr-toggle btn-sm" onclick="toggleQr(<?= $idx ?>)" title="Show QR for <?= e($st['to']) ?>">
+                                        📷 <?= e($st['to']) ?>'s QR
+                                    </button>
+                                    <a href="<?= e($upiStr) ?>" class="btn btn-pay-sm">📲 Pay Now</a>
+                                <?php else: ?>
+                                    <span class="no-upi-hint">
+                                        <?php if ($isOwner): ?>
+                                            <span style="font-size:0.75rem;color:var(--text-dim);">Set UPI for <?= e($st['to']) ?></span>
+                                        <?php else: ?>
+                                            <span style="font-size:0.75rem;color:var(--text-dim);">No UPI set for <?= e($st['to']) ?></span>
+                                        <?php endif; ?>
+                                    </span>
+                                <?php endif; ?>
+
+                                <?php if ($isOwner): ?>
+                                    <form action="mark_paid" method="POST" style="display:inline;">
+                                        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                                        <input type="hidden" name="group_id" value="<?= $groupId ?>">
+                                        <input type="hidden" name="from_name" value="<?= e($st['from']) ?>">
+                                        <input type="hidden" name="to_name" value="<?= e($st['to']) ?>">
+                                        <button type="submit" class="btn btn-mark-paid btn-sm"
+                                                onclick="return confirm('Mark <?= e($st['from']) ?> as paid to <?= e($st['to']) ?>?');">
+                                            ✔ Mark Paid
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+
+                        <!-- Expandable QR Panel -->
+                        <?php if ($hasUpi): ?>
+                            <div class="settlement-qr-panel" id="qr-panel-<?= $idx ?>" style="display:none;" data-upi="<?= e($upiStr) ?>">
+                                <div class="settlement-qr-inner">
+                                    <div class="upi-id-label" style="margin-bottom:0.6rem;">
+                                        <span>💳</span> <span><?= e($toUpi) ?></span>
+                                    </div>
+                                    <div id="qr-container-<?= $idx ?>" class="qr-render-box" style="display:flex; justify-content:center; align-items:center; min-height:150px; margin:0.5rem 0;">
+                                        <img src="<?= e($qrUrl) ?>"
+                                             alt="UPI QR – <?= e($st['to']) ?>"
+                                             class="upi-qr-img"
+                                             loading="lazy">
+                                    </div>
+                                    <p class="qr-hint"><?= e($st['from']) ?> → <?= e($st['to']) ?> • <?= formatMoney($st['amount'], $group['currency']) ?></p>
+                                    <!-- Dynamic UPI Payment Apps -->
+                                    <?php if (!empty($activePaymentApps)): ?>
+                                        <div class="upi-apps-section">
+                                            <div class="upi-apps-label">⚡ Pay Directly with App</div>
+                                            <div class="upi-apps-grid">
+                                                <?php foreach ($activePaymentApps as $app): 
+                                                    $appDeepLink = $app['uri_prefix'] . $upiParams;
+                                                    $customBg    = !empty($app['bg_color']) ? 'background:' . e($app['bg_color']) . ';' : '';
+                                                    $customColor = !empty($app['text_color']) ? 'color:' . e($app['text_color']) . ';' : '';
+                                                    $isSpan2     = ($app['app_code'] === 'generic') ? 'upi-app-generic' : '';
+                                                ?>
+                                                    <a href="<?= e($appDeepLink) ?>" 
+                                                       class="upi-app-btn upi-app-<?= e($app['app_code']) ?> <?= $isSpan2 ?>" 
+                                                       style="<?= $customBg ?> <?= $customColor ?>"
+                                                       title="Pay with <?= e($app['name']) ?>">
+                                                        <?php if (!empty($app['icon_data'])): ?>
+                                                            <?= $app['icon_data'] ?>
+                                                        <?php endif; ?>
+                                                        <span><?= e($app['name']) ?></span>
+                                                    </a>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- ── Right Column ── -->
+    <div class="group-right-col">
+
         <!-- Participants Card -->
-        <div class="card" style="margin-top: 1.5rem;">
+        <div class="card" style="margin-bottom: 1.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h3 style="font-size: 1.1rem; font-weight: 700;">👥 Participants (<?= count($participants) ?>)</h3>
             </div>
@@ -240,158 +392,6 @@ require_once __DIR__ . '/includes/header.php';
                 <p style="font-size: 0.78rem; color: var(--text-dim); margin-top: 0.75rem; text-align: center;">
                     💡 Click 💳 next to any participant to set their UPI ID for payment QR codes.
                 </p>
-            <?php endif; ?>
-        </div>
-    </div>
-
-    <!-- ── Right Column ── -->
-    <div class="group-right-col">
-
-        <!-- Expense Summary -->
-        <div class="settlement-card">
-            <h3 class="summary-section-title">📊 Expense Summary</h3>
-
-            <div class="summary-total-box">
-                <div class="summary-label">Total Group Expense</div>
-                <div class="summary-amount"><?= formatMoney($stats['total_expense'], $group['currency']) ?></div>
-            </div>
-
-            <!-- Settle Up Plan -->
-            <h4 class="settle-subtitle">🤝 Final Settle Up Plan</h4>
-
-            <?php if (empty($stats['settlements'])): ?>
-                <div class="settle-all-clear">✨ Everyone is settled up!</div>
-            <?php else: ?>
-                <?php $activePaymentApps = getActivePaymentApps(); ?>
-                <?php foreach ($stats['settlements'] as $idx => $st): ?>
-                    <?php
-                    $toUpi   = $st['to_upi'] ?? '';
-                    $hasUpi  = !empty($toUpi) && !$st['paid'];
-                    $upiParams = $hasUpi
-                        ? "pa=" . urlencode($toUpi) . "&pn=" . urlencode($st['to']) . "&cu=INR&am=" . number_format($st['amount'], 2, '.', '') . "&tn=" . urlencode($st['from'] . " pays " . $st['to'])
-                        : '';
-                    $upiStr     = $hasUpi ? "upi://pay?" . $upiParams : '';
-                    $gpayUrl    = $hasUpi ? "gpay://upi/pay?" . $upiParams : '';
-                    $phonepeUrl = $hasUpi ? "phonepe://pay?" . $upiParams : '';
-                    $paytmUrl   = $hasUpi ? "paytmmp://pay?" . $upiParams : '';
-                    $bhimUrl    = $hasUpi ? "bhim://pay?" . $upiParams : '';
-                    $qrUrl      = $hasUpi
-                        ? "https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=" . urlencode($upiStr)
-                        : '';
-                    ?>
-                    <div class="settlement-item <?= $st['paid'] ? 'settlement-paid' : '' ?>">
-                        <!-- Debtor → Creditor row -->
-                        <div class="settlement-main-row">
-                            <div class="settlement-info">
-                                <strong><?= e($st['from']) ?></strong>
-                                <span class="settlement-arrow">➔</span>
-                                <strong><?= e($st['to']) ?></strong>
-                            </div>
-                            <div class="settlement-right">
-                                <?php if ($st['paid']): ?>
-                                    <span class="paid-badge">✅ Paid</span>
-                                    <span class="settlement-amount strike"><?= $group['currency'] ?> 0.00</span>
-                                <?php else: ?>
-                                    <span class="settlement-amount"><?= formatMoney($st['amount'], $group['currency']) ?></span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-
-                        <!-- Action row for settled items: Owner Undo Button -->
-                        <?php if ($st['paid']): ?>
-                            <?php if ($isOwner): ?>
-                                <div class="settlement-actions-row settlement-paid-actions" style="border-top:1px dashed #bbf7d0; justify-content:space-between;">
-                                    <span style="font-size:0.75rem; color:#15803d; font-weight:700;">Settlement completed</span>
-                                    <form action="mark_paid" method="POST" style="display:inline;">
-                                        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
-                                        <input type="hidden" name="action" value="unmark">
-                                        <input type="hidden" name="group_id" value="<?= $groupId ?>">
-                                        <input type="hidden" name="from_name" value="<?= e($st['from']) ?>">
-                                        <input type="hidden" name="to_name" value="<?= e($st['to']) ?>">
-                                        <button type="submit" class="btn btn-secondary btn-sm"
-                                                onclick="return confirm('Undo paid settlement for <?= e($st['from']) ?> to <?= e($st['to']) ?>?');"
-                                                style="font-size:0.75rem; padding:0.25rem 0.6rem; border-color:#86efac; background:#f0fdf4;">
-                                            ↩ Undo (Mark Unpaid)
-                                        </button>
-                                    </form>
-                                </div>
-                            <?php endif; ?>
-                        <?php else: ?>
-                            <!-- Action row: QR toggle + Pay btn + Mark paid -->
-                            <div class="settlement-actions-row">
-                                <?php if ($hasUpi): ?>
-                                    <button class="btn-qr-toggle btn-sm" onclick="toggleQr(<?= $idx ?>)" title="Show QR for <?= e($st['to']) ?>">
-                                        📷 <?= e($st['to']) ?>'s QR
-                                    </button>
-                                    <a href="<?= e($upiStr) ?>" class="btn btn-pay-sm">📲 Pay Now</a>
-                                <?php else: ?>
-                                    <span class="no-upi-hint">
-                                        <?php if ($isOwner): ?>
-                                            <span style="font-size:0.75rem;color:var(--text-dim);">Set UPI for <?= e($st['to']) ?> ↑</span>
-                                        <?php else: ?>
-                                            <span style="font-size:0.75rem;color:var(--text-dim);">No UPI set for <?= e($st['to']) ?></span>
-                                        <?php endif; ?>
-                                    </span>
-                                <?php endif; ?>
-
-                                <?php if ($isOwner): ?>
-                                    <form action="mark_paid" method="POST" style="display:inline;">
-                                        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
-                                        <input type="hidden" name="group_id" value="<?= $groupId ?>">
-                                        <input type="hidden" name="from_name" value="<?= e($st['from']) ?>">
-                                        <input type="hidden" name="to_name" value="<?= e($st['to']) ?>">
-                                        <button type="submit" class="btn btn-mark-paid btn-sm"
-                                                onclick="return confirm('Mark <?= e($st['from']) ?> as paid to <?= e($st['to']) ?>?');">
-                                            ✔ Mark Paid
-                                        </button>
-                                    </form>
-                                <?php endif; ?>
-                            </div>
-                        <?php endif; ?>
-
-                        <!-- Expandable QR Panel -->
-                        <?php if ($hasUpi): ?>
-                            <div class="settlement-qr-panel" id="qr-panel-<?= $idx ?>" style="display:none;" data-upi="<?= e($upiStr) ?>">
-                                <div class="settlement-qr-inner">
-                                    <div class="upi-id-label" style="margin-bottom:0.6rem;">
-                                        <span>💳</span> <span><?= e($toUpi) ?></span>
-                                    </div>
-                                    <div id="qr-container-<?= $idx ?>" class="qr-render-box" style="display:flex; justify-content:center; align-items:center; min-height:150px; margin:0.5rem 0;">
-                                        <img src="<?= e($qrUrl) ?>"
-                                             alt="UPI QR – <?= e($st['to']) ?>"
-                                             class="upi-qr-img"
-                                             loading="lazy">
-                                    </div>
-                                    <p class="qr-hint"><?= e($st['from']) ?> → <?= e($st['to']) ?> • <?= formatMoney($st['amount'], $group['currency']) ?></p>
-                                    <!-- Dynamic UPI Payment Apps -->
-                                    <?php if (!empty($activePaymentApps)): ?>
-                                        <div class="upi-apps-section">
-                                            <div class="upi-apps-label">⚡ Pay Directly with App</div>
-                                            <div class="upi-apps-grid">
-                                                <?php foreach ($activePaymentApps as $app): 
-                                                    $appDeepLink = $app['uri_prefix'] . $upiParams;
-                                                    $customBg    = !empty($app['bg_color']) ? 'background:' . e($app['bg_color']) . ';' : '';
-                                                    $customColor = !empty($app['text_color']) ? 'color:' . e($app['text_color']) . ';' : '';
-                                                    $isSpan2     = ($app['app_code'] === 'generic') ? 'upi-app-generic' : '';
-                                                ?>
-                                                    <a href="<?= e($appDeepLink) ?>" 
-                                                       class="upi-app-btn upi-app-<?= e($app['app_code']) ?> <?= $isSpan2 ?>" 
-                                                       style="<?= $customBg ?> <?= $customColor ?>"
-                                                       title="Pay with <?= e($app['name']) ?>">
-                                                        <?php if (!empty($app['icon_data'])): ?>
-                                                            <?= $app['icon_data'] ?>
-                                                        <?php endif; ?>
-                                                        <span><?= e($app['name']) ?></span>
-                                                    </a>
-                                                <?php endforeach; ?>
-                                            </div>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                <?php endforeach; ?>
             <?php endif; ?>
         </div>
 
