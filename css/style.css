@@ -578,6 +578,7 @@ select.form-control {
     gap: 0.75rem;
     box-shadow: 2px 2px 0px var(--border-ink);
     transition: var(--transition);
+    scrollbar-width: none;
 }
 
 .expense-item:last-child {
@@ -946,7 +947,7 @@ select.form-control {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.82rem;
-    min-width: 380px;
+    min-width: auto;
 }
 
 .balance-table th {
@@ -998,6 +999,7 @@ select.form-control {
     gap: 0.5rem;
     flex-direction: row;
     width: 100%;
+    margin-top: 16px;
 }
 
 .participant-chip {
@@ -1942,7 +1944,7 @@ html, body {
 
 @media (max-width: 992px) {
     .group-content-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: 100%;
     }
     .banner-actions {
         align-items: stretch;
@@ -2090,7 +2092,7 @@ html, body {
     }
 
     .contacts-cards-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: 100%;
     }
 }
 
@@ -2373,6 +2375,12 @@ html, body {
 .status-user {
     background: #f1f5f9;
     color: #475569;
+}
+
+input#shareUrlInput {
+    overflow-wrap: break-word !important;
+    word-wrap: break-word;
+    width: auto;
 }
 
 /* Modal */
