@@ -7,6 +7,13 @@
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $filePath = __DIR__ . $uri;
 
+// Block direct access to sensitive cache directory
+if (strpos($uri, '/cache') === 0 || strpos($uri, '/database') === 0) {
+    http_response_code(403);
+    echo "403 Forbidden";
+    exit;
+}
+
 // PWA Headers & File Routing
 $cleanName = basename($uri);
 if (($cleanName === 'manifest.webmanifest' || $cleanName === 'manifest.json') && (file_exists(__DIR__ . '/manifest.webmanifest') || file_exists(__DIR__ . '/manifest.json'))) {

@@ -86,3 +86,6 @@ RewriteRule ^([^/]+)/?$ $1.php [L,QSA]
     Deny from all
 </FilesMatch>
 
+# ── Protect cache files from direct web access ───────────────────────────────
+RewriteRule ^cache(/|$) - [F,L]
+

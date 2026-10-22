@@ -54,8 +54,10 @@ if (session_status() === PHP_SESSION_NONE) {
 
 // Rate Limiting & Security Configuration
 define('ENABLE_RATE_LIMITING', true);
-define('RATE_LIMIT_GLOBAL_MAX', 150);      // Max requests per minute per IP
-define('RATE_LIMIT_LOGIN_MAX', 5);         // Max failed login attempts before lockout
+define('RATE_LIMIT_STORAGE', 'file');        // 'file' (Fast, 0 database overhead, ideal for shared hosting)
+define('RATE_LIMIT_CACHE_DIR', __DIR__ . '/cache/rate_limits');
+define('RATE_LIMIT_GLOBAL_MAX', 150);        // Max requests per minute per IP
+define('RATE_LIMIT_LOGIN_MAX', 5);           // Max failed login attempts before lockout
 define('RATE_LIMIT_LOGIN_LOCKOUT_SEC', 900); // 15 minutes lockout duration
-define('RATE_LIMIT_PASSWORD_RESET_MAX', 3); // Max reset requests per 15 minutes
+define('RATE_LIMIT_PASSWORD_RESET_MAX', 3);  // Max reset requests per 15 minutes
 

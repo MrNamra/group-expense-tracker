@@ -57,11 +57,59 @@ function getSecureClientIP(): string {
     return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 }
 
-// ── Rate Limiter Engine (Sliding Window) ───────────────────────────────────────
+// ── Rate Limiter Directory & Storage Helper ───────────────────────────────────
+function getRateLimitCacheDir(): string {
+    $dir = defined('RATE_LIMIT_CACHE_DIR') ? RATE_LIMIT_CACHE_DIR : (__DIR__ . '/../cache/rate_limits');
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+        $htaccess = $dir . '/.htaccess';
+        if (!file_exists($htaccess)) {
+            @file_put_contents($htaccess, "# Protect rate limit cache files\n<IfModule !mod_authz_core.c>\n    Order Deny,Allow\n    Deny from all\n</IfModule>\n<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n");
+        }
+        $index = $dir . '/index.html';
+        if (!file_exists($index)) {
+            @file_put_contents($index, '');
+        }
+    }
+    return $dir;
+}
+
+// Probabilistic auto-cleanup for expired rate limit cache files (runs in background, 0 cron needed)
+function autoPurgeExpiredRateLimitFiles(): void {
+    $dir = getRateLimitCacheDir();
+    if (!is_dir($dir)) return;
+
+    $now = time();
+    $files = @glob($dir . '/rl_*.json');
+    if (!$files) return;
+
+    foreach ($files as $file) {
+        $raw = @file_get_contents($file);
+        if (!$raw) {
+            if ((filemtime($file) + 300) < $now) {
+                @unlink($file);
+            }
+            continue;
+        }
+        $data = json_decode($raw, true);
+        if (!$data || !isset($data['expires_at'])) {
+            @unlink($file);
+            continue;
+        }
+        // Delete if expiration time has passed and block has elapsed
+        if ((int)$data['expires_at'] < $now && (int)($data['blocked_until'] ?? 0) <= $now) {
+            @unlink($file);
+        }
+    }
+}
+
+// ── Rate Limiter Engine (High-Performance File Cache) ─────────────────────────
 /**
- * Check and record a rate limited action.
+ * Check and record a rate limited action using fast file storage.
+ * Completely eliminates database queries, lock contention, and connection exhaustion on shared hosting.
+ * Automatically purges expired cache files.
  *
- * @param string $actionKey Unique action identifier (e.g. 'global', 'login', 'reset_pwd')
+ * @param string $actionKey Unique action identifier (e.g. 'http_global', 'login_ip', 'login_user')
  * @param int $maxHits Maximum requests permitted in window
  * @param int $windowSeconds Duration of window in seconds
  * @param string|null $identifier Optional custom identifier (defaults to client IP)
@@ -74,67 +122,80 @@ function checkRateLimit(string $actionKey, int $maxHits, int $windowSeconds, ?st
 
     $identifier = $identifier ?: getSecureClientIP();
     $now = time();
-    $db = getDBConnection();
+
+    // 1 in 50 requests triggers lightweight probabilistic auto-cleanup of expired files
+    if (mt_rand(1, 50) === 1) {
+        autoPurgeExpiredRateLimitFiles();
+    }
+
+    $cacheDir = getRateLimitCacheDir();
+    $safeIdent = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $identifier);
+    $cacheKey = 'rl_' . $actionKey . '_' . $safeIdent . '_' . substr(md5($identifier), 0, 8) . '.json';
+    $filePath = $cacheDir . '/' . $cacheKey;
+
+    $fp = @fopen($filePath, 'c+');
+    if (!$fp) {
+        // Fallback open if file permissions issue
+        return ['allowed' => true, 'current' => 1, 'max' => $maxHits, 'retry_after' => 0, 'remaining' => $maxHits];
+    }
 
     try {
-        // Look up active rate limit row
-        $stmt = $db->prepare("
-            SELECT id, hit_count, first_hit_at, blocked_until 
-            FROM rate_limits 
-            WHERE identifier = :ident AND action_key = :act
-            LIMIT 1
-        ");
-        $stmt->execute([':ident' => $identifier, ':act' => $actionKey]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Exclusive lock to prevent race conditions during concurrent hits without DB locks
+        if (!flock($fp, LOCK_EX)) {
+            fclose($fp);
+            return ['allowed' => true, 'current' => 1, 'max' => $maxHits, 'retry_after' => 0, 'remaining' => $maxHits];
+        }
 
-        if ($row) {
-            $blockedUntil = (int)$row['blocked_until'];
-            $firstHitAt   = (int)$row['first_hit_at'];
-            $hitCount     = (int)$row['hit_count'];
-            $rowId        = (int)$row['id'];
+        $contents = '';
+        while (!feof($fp)) {
+            $contents .= fread($fp, 8192);
+        }
 
-            // 1. Is it currently blocked?
-            if ($blockedUntil > $now) {
-                $retryAfter = $blockedUntil - $now;
-                return [
-                    'allowed'     => false,
-                    'current'     => $hitCount,
-                    'max'         => $maxHits,
-                    'retry_after' => $retryAfter,
-                    'remaining'   => 0
-                ];
-            }
+        $data = !empty($contents) ? json_decode($contents, true) : null;
+        $blockedUntil = (int)($data['blocked_until'] ?? 0);
+        $firstHitAt   = (int)($data['first_hit_at'] ?? 0);
+        $hitCount     = (int)($data['hit_count'] ?? 0);
 
-            // 2. Has the time window expired? Reset window
-            if (($now - $firstHitAt) >= $windowSeconds) {
-                $upd = $db->prepare("
-                    UPDATE rate_limits 
-                    SET hit_count = 1, first_hit_at = :now, blocked_until = 0 
-                    WHERE id = :id
-                ");
-                $upd->execute([':now' => $now, ':id' => $rowId]);
+        // 1. Is it currently blocked?
+        if ($data && $blockedUntil > $now) {
+            $retryAfter = $blockedUntil - $now;
+            flock($fp, LOCK_UN);
+            fclose($fp);
+            return [
+                'allowed'     => false,
+                'current'     => $hitCount,
+                'max'         => $maxHits,
+                'retry_after' => $retryAfter,
+                'remaining'   => 0
+            ];
+        }
 
-                return [
-                    'allowed'     => true,
-                    'current'     => 1,
-                    'max'         => $maxHits,
-                    'retry_after' => 0,
-                    'remaining'   => max(0, $maxHits - 1)
-                ];
-            }
-
+        // 2. Has the time window expired or is this a new tracker? Reset window
+        if (!$data || (($now - $firstHitAt) >= $windowSeconds)) {
+            $data = [
+                'identifier'   => $identifier,
+                'action_key'   => $actionKey,
+                'hit_count'    => 1,
+                'first_hit_at' => $now,
+                'blocked_until'=> 0,
+                'expires_at'   => $now + $windowSeconds
+            ];
+            $result = [
+                'allowed'     => true,
+                'current'     => 1,
+                'max'         => $maxHits,
+                'retry_after' => 0,
+                'remaining'   => max(0, $maxHits - 1)
+            ];
+        } else {
             // 3. Within window: increment hits
             $newCount = $hitCount + 1;
             if ($newCount > $maxHits) {
                 $blockUntil = $now + $windowSeconds;
-                $upd = $db->prepare("
-                    UPDATE rate_limits 
-                    SET hit_count = :cnt, blocked_until = :blk 
-                    WHERE id = :id
-                ");
-                $upd->execute([':cnt' => $newCount, ':blk' => $blockUntil, ':id' => $rowId]);
-
-                return [
+                $data['hit_count']     = $newCount;
+                $data['blocked_until'] = $blockUntil;
+                $data['expires_at']    = $blockUntil;
+                $result = [
                     'allowed'     => false,
                     'current'     => $newCount,
                     'max'         => $maxHits,
@@ -142,10 +203,9 @@ function checkRateLimit(string $actionKey, int $maxHits, int $windowSeconds, ?st
                     'remaining'   => 0
                 ];
             } else {
-                $upd = $db->prepare("UPDATE rate_limits SET hit_count = :cnt WHERE id = :id");
-                $upd->execute([':cnt' => $newCount, ':id' => $rowId]);
-
-                return [
+                $data['hit_count']     = $newCount;
+                $data['expires_at']    = $firstHitAt + $windowSeconds;
+                $result = [
                     'allowed'     => true,
                     'current'     => $newCount,
                     'max'         => $maxHits,
@@ -153,24 +213,23 @@ function checkRateLimit(string $actionKey, int $maxHits, int $windowSeconds, ?st
                     'remaining'   => max(0, $maxHits - $newCount)
                 ];
             }
-        } else {
-            // New record for this identifier and action
-            $ins = $db->prepare("
-                INSERT INTO rate_limits (identifier, action_key, hit_count, first_hit_at, blocked_until)
-                VALUES (:ident, :act, 1, :now, 0)
-            ");
-            $ins->execute([':ident' => $identifier, ':act' => $actionKey, ':now' => $now]);
-
-            return [
-                'allowed'     => true,
-                'current'     => 1,
-                'max'         => $maxHits,
-                'retry_after' => 0,
-                'remaining'   => max(0, $maxHits - 1)
-            ];
         }
+
+        // Write back atomically
+        ftruncate($fp, 0);
+        rewind($fp);
+        fwrite($fp, json_encode($data));
+        fflush($fp);
+        flock($fp, LOCK_UN);
+        fclose($fp);
+
+        return $result;
+
     } catch (Exception $e) {
-        // Fallback open if DB has an issue during high concurrency
+        if (is_resource($fp)) {
+            @flock($fp, LOCK_UN);
+            @fclose($fp);
+        }
         return ['allowed' => true, 'current' => 1, 'max' => $maxHits, 'retry_after' => 0, 'remaining' => $maxHits];
     }
 }
@@ -358,13 +417,16 @@ function checkLoginAttemptLockout(string $input, string $ip): array {
 
 // Clear login rate limit upon successful authentication
 function clearLoginLockout(string $input, string $ip): void {
-    $db = getDBConnection();
+    unlockRateLimitIdentifier($ip);
+    $cleanInput = 'usr_' . md5(strtolower(trim($input)));
+    unlockRateLimitIdentifier($cleanInput);
+
+    // Also clean legacy DB tables if connection is available
     try {
-        $cleanInput = 'usr_' . md5(strtolower(trim($input)));
+        $db = getDBConnection();
         $stmt = $db->prepare("DELETE FROM rate_limits WHERE (identifier = :ip AND action_key = 'login_ip') OR (identifier = :usr AND action_key = 'login_user')");
         $stmt->execute([':ip' => $ip, ':usr' => $cleanInput]);
 
-        // Also clean legacy login_attempts table
         $stmt2 = $db->prepare("DELETE FROM login_attempts WHERE ip_address = :ip OR username_input = :inp");
         $stmt2->execute([':ip' => $ip, ':inp' => strtolower(trim($input))]);
     } catch (Exception $e) {}
@@ -540,21 +602,52 @@ function completePasswordReset(string $token, string $newPassword): array {
 
 // ── Admin Security Oversight Functions ────────────────────────────────────────
 
-// Retrieve recent rate limits for admin inspection
+// Retrieve recent rate limits for admin inspection from file cache
 function getAdminRateLimits(int $limit = 50): array {
-    $db = getDBConnection();
-    try {
-        $stmt = $db->prepare("
-            SELECT * FROM rate_limits 
-            ORDER BY blocked_until DESC, first_hit_at DESC 
-            LIMIT :lim
-        ");
-        $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
-        $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Exception $e) {
-        return [];
+    $dir = getRateLimitCacheDir();
+    $records = [];
+    $now = time();
+
+    if (is_dir($dir)) {
+        $files = @glob($dir . '/rl_*.json');
+        if ($files) {
+            foreach ($files as $file) {
+                $raw = @file_get_contents($file);
+                if (!$raw) continue;
+                $item = json_decode($raw, true);
+                if (!$item) continue;
+
+                // Auto-delete expired files during inspection
+                if (isset($item['expires_at']) && (int)$item['expires_at'] < $now && (int)($item['blocked_until'] ?? 0) <= $now) {
+                    @unlink($file);
+                    continue;
+                }
+
+                $records[] = [
+                    'identifier'   => $item['identifier'] ?? 'unknown',
+                    'action_key'   => $item['action_key'] ?? 'unknown',
+                    'hit_count'    => (int)($item['hit_count'] ?? 1),
+                    'first_hit_at' => (int)($item['first_hit_at'] ?? $now),
+                    'blocked_until'=> (int)($item['blocked_until'] ?? 0),
+                ];
+            }
+        }
     }
+
+    // Sort by currently blocked first, then latest first_hit_at
+    usort($records, function ($a, $b) use ($now) {
+        $aBlocked = ($a['blocked_until'] > $now) ? 1 : 0;
+        $bBlocked = ($b['blocked_until'] > $now) ? 1 : 0;
+        if ($aBlocked !== $bBlocked) {
+            return $bBlocked <=> $aBlocked;
+        }
+        if ($a['blocked_until'] !== $b['blocked_until']) {
+            return $b['blocked_until'] <=> $a['blocked_until'];
+        }
+        return $b['first_hit_at'] <=> $a['first_hit_at'];
+    });
+
+    return array_slice($records, 0, $limit);
 }
 
 // Retrieve recent password reset requests for admin oversight
@@ -576,25 +669,46 @@ function getAdminPasswordResets(int $limit = 50): array {
     }
 }
 
-// Unlock an IP or user in rate limits
+// Unlock an IP or user in file cache & rate limits
 function unlockRateLimitIdentifier(string $identifier): bool {
-    $db = getDBConnection();
-    try {
-        $stmt = $db->prepare("DELETE FROM rate_limits WHERE identifier = :id");
-        return $stmt->execute([':id' => $identifier]);
-    } catch (Exception $e) {
-        return false;
+    $unlocked = false;
+    $dir = getRateLimitCacheDir();
+    if (is_dir($dir)) {
+        $files = @glob($dir . '/rl_*.json');
+        if ($files) {
+            foreach ($files as $file) {
+                $raw = @file_get_contents($file);
+                if (!$raw) continue;
+                $item = json_decode($raw, true);
+                if ($item && isset($item['identifier']) && $item['identifier'] === $identifier) {
+                    @unlink($file);
+                    $unlocked = true;
+                }
+            }
+        }
     }
+
+    // Clean legacy DB table if present
+    try {
+        $db = getDBConnection();
+        $stmt = $db->prepare("DELETE FROM rate_limits WHERE identifier = :id");
+        $stmt->execute([':id' => $identifier]);
+    } catch (Exception $e) {}
+
+    return true;
 }
 
-// Clear all expired or old rate limit records
+// Clear all expired rate limit cache files & old records
 function clearExpiredRateLimits(): bool {
-    $db = getDBConnection();
+    autoPurgeExpiredRateLimitFiles();
+
+    // Clean legacy DB table if present
     try {
+        $db = getDBConnection();
         $now = time();
         $stmt = $db->prepare("DELETE FROM rate_limits WHERE blocked_until < :now AND first_hit_at < (:now - 3600)");
-        return $stmt->execute([':now' => $now]);
-    } catch (Exception $e) {
-        return false;
-    }
+        $stmt->execute([':now' => $now]);
+    } catch (Exception $e) {}
+
+    return true;
 }
