@@ -138,6 +138,27 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
                 sort_order INTEGER DEFAULT 0,
                 is_active INTEGER DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );",
+
+            "CREATE TABLE IF NOT EXISTS rate_limits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                identifier VARCHAR(100) NOT NULL,
+                action_key VARCHAR(50) NOT NULL,
+                hit_count INTEGER DEFAULT 1,
+                first_hit_at INTEGER NOT NULL,
+                blocked_until INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );",
+
+            "CREATE TABLE IF NOT EXISTS password_resets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token VARCHAR(64) NOT NULL UNIQUE,
+                expires_at DATETIME NOT NULL,
+                used INTEGER DEFAULT 0,
+                ip_address VARCHAR(45) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );"
         ];
     } else { // MySQL
@@ -235,6 +256,28 @@ function initDatabaseSchema(PDO $pdo, string $driver) {
                 sort_order INT DEFAULT 0,
                 is_active TINYINT(1) DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+
+            "CREATE TABLE IF NOT EXISTS rate_limits (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                identifier VARCHAR(100) NOT NULL,
+                action_key VARCHAR(50) NOT NULL,
+                hit_count INT DEFAULT 1,
+                first_hit_at INT NOT NULL,
+                blocked_until INT DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_rate_limits_ident (identifier, action_key)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+
+            "CREATE TABLE IF NOT EXISTS password_resets (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                token VARCHAR(64) NOT NULL UNIQUE,
+                expires_at DATETIME NOT NULL,
+                used TINYINT(1) DEFAULT 0,
+                ip_address VARCHAR(45) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
         ];
     }
@@ -574,6 +617,76 @@ function checkAndApplyMigrations(PDO $pdo, string $driver): array {
         }
     } catch (Exception $e) {
         $log[] = "Payment apps seeding: " . $e->getMessage();
+    }
+
+    // ── 8. Migration: rate_limits table ──
+    if (!$hasTable('rate_limits')) {
+        try {
+            if ($driver === 'sqlite') {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS rate_limits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    identifier VARCHAR(100) NOT NULL,
+                    action_key VARCHAR(50) NOT NULL,
+                    hit_count INTEGER DEFAULT 1,
+                    first_hit_at INTEGER NOT NULL,
+                    blocked_until INTEGER DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );");
+                $pdo->exec("CREATE INDEX IF NOT EXISTS idx_rate_limits_ident ON rate_limits (identifier, action_key);");
+            } else {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS rate_limits (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    identifier VARCHAR(100) NOT NULL,
+                    action_key VARCHAR(50) NOT NULL,
+                    hit_count INT DEFAULT 1,
+                    first_hit_at INT NOT NULL,
+                    blocked_until INT DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_rate_limits_ident (identifier, action_key)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+            }
+            $log[] = "Created table 'rate_limits' for API & brute-force throttling.";
+        } catch (Exception $e) {
+            $log[] = "Error creating table rate_limits: " . $e->getMessage();
+        }
+    } else {
+        $log[] = "Table 'rate_limits' verified.";
+    }
+
+    // ── 9. Migration: password_resets table ──
+    if (!$hasTable('password_resets')) {
+        try {
+            if ($driver === 'sqlite') {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS password_resets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    token VARCHAR(64) NOT NULL UNIQUE,
+                    expires_at DATETIME NOT NULL,
+                    used INTEGER DEFAULT 0,
+                    ip_address VARCHAR(45) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );");
+                $pdo->exec("CREATE INDEX IF NOT EXISTS idx_pwd_resets_token ON password_resets (token);");
+            } else {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS password_resets (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    token VARCHAR(64) NOT NULL UNIQUE,
+                    expires_at DATETIME NOT NULL,
+                    used TINYINT(1) DEFAULT 0,
+                    ip_address VARCHAR(45) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_pwd_resets_token (token),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+            }
+            $log[] = "Created table 'password_resets' for secure self-service password recovery.";
+        } catch (Exception $e) {
+            $log[] = "Error creating table password_resets: " . $e->getMessage();
+        }
+    } else {
+        $log[] = "Table 'password_resets' verified.";
     }
 
     // Clean up activity_logs table if previously created

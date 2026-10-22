@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/security.php';
 
 // Helper for XSS escaping
 function e(?string $str): string {
@@ -47,6 +48,14 @@ function requireLogin() {
 // Register user safely
 function registerUser(string $username, string $email, string $password): array {
     $db = getDBConnection();
+    $ip = getSecureClientIP();
+
+    // Rate limit registration: max 5 per hour per IP
+    $regLimit = checkRateLimit('user_register', 5, 3600, $ip);
+    if (!$regLimit['allowed']) {
+        $mins = ceil($regLimit['retry_after'] / 60);
+        return ['success' => false, 'message' => "Too many registrations from your IP. Please try again in {$mins} minute(s)."];
+    }
     
     $username = trim($username);
     $email = strtolower(trim($email));
@@ -89,70 +98,40 @@ function registerUser(string $username, string $email, string $password): array 
 
 // Get client IP address
 function getClientIP(): string {
-    return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+    return getSecureClientIP();
 }
 
-// Check failed login attempts (Lockout if 5 failed attempts in 1 hour)
+// Check failed login attempts (Lockout if max attempts reached)
 function isLoginLockedOut(string $input, string $ip): array {
-    $db = getDBConnection();
-    $maxAttempts = 5;
-
-    if (DB_DRIVER === 'sqlite') {
-        $stmt = $db->prepare("
-            SELECT COUNT(*) as attempts 
-            FROM login_attempts 
-            WHERE (username_input = :input OR ip_address = :ip) 
-              AND attempt_time >= datetime('now', '-1 hour')
-        ");
-    } else {
-        $stmt = $db->prepare("
-            SELECT COUNT(*) as attempts 
-            FROM login_attempts 
-            WHERE (username_input = :input OR ip_address = :ip) 
-              AND attempt_time >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
-        ");
-    }
-
-    $stmt->execute([':input' => strtolower($input), ':ip' => $ip]);
-    $row = $stmt->fetch();
-    $attempts = (int) ($row['attempts'] ?? 0);
-
-    if ($attempts >= $maxAttempts) {
-        return [
-            'locked' => true,
-            'message' => 'Too many failed login attempts (5/5). Account temporarily locked for 1 hour for security.'
-        ];
-    }
-
-    return ['locked' => false, 'attempts' => $attempts];
+    return checkLoginAttemptLockout($input, $ip);
 }
 
 // Record failed login attempt
 function recordFailedLoginAttempt(string $input, string $ip): void {
     $db = getDBConnection();
-    $stmt = $db->prepare("INSERT INTO login_attempts (ip_address, username_input) VALUES (:ip, :input)");
-    $stmt->execute([':ip' => $ip, ':input' => strtolower($input)]);
+    try {
+        $stmt = $db->prepare("INSERT INTO login_attempts (ip_address, username_input) VALUES (:ip, :input)");
+        $stmt->execute([':ip' => $ip, ':input' => strtolower($input)]);
+    } catch (Exception $e) {}
 }
 
 // Reset failed login attempts on successful login
 function resetFailedLoginAttempts(string $input, string $ip): void {
-    $db = getDBConnection();
-    $stmt = $db->prepare("DELETE FROM login_attempts WHERE username_input = :input OR ip_address = :ip");
-    $stmt->execute([':input' => strtolower($input), ':ip' => $ip]);
+    clearLoginLockout($input, $ip);
 }
 
-// Login user safely with brute-force protection
+// Login user safely with brute-force rate-limiting protection
 function loginUser(string $usernameOrEmail, string $password): array {
     $db = getDBConnection();
     $input = trim($usernameOrEmail);
-    $ip = getClientIP();
+    $ip = getSecureClientIP();
 
     if (empty($input) || empty($password)) {
         return ['success' => false, 'message' => 'Please enter username/email and password.'];
     }
 
-    // Check account/IP lockout
-    $lockoutStatus = isLoginLockedOut($input, $ip);
+    // Check account / IP brute-force lockout
+    $lockoutStatus = checkLoginAttemptLockout($input, $ip);
     if ($lockoutStatus['locked']) {
         return ['success' => false, 'message' => $lockoutStatus['message']];
     }
@@ -163,26 +142,32 @@ function loginUser(string $usernameOrEmail, string $password): array {
     $user = $stmt->fetch();
 
     if ($user && password_verify($password, $user['password'])) {
-        resetFailedLoginAttempts($input, $ip);
-        session_regenerate_id(true);
+        // Successful login: clear all failure counts
+        clearLoginLockout($input, $ip);
+        if (!headers_sent()) {
+            session_regenerate_id(true);
+        }
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
         $_SESSION['email'] = $user['email'];
         return ['success' => true, 'user' => $user];
     }
 
-    // Record failed attempt
+    // Record failed attempt in legacy table + rate_limits
     recordFailedLoginAttempt($input, $ip);
-    $currentAttempts = $lockoutStatus['attempts'] + 1;
-    $remaining = 5 - $currentAttempts;
+    checkRateLimit('login_ip', defined('RATE_LIMIT_LOGIN_MAX') ? RATE_LIMIT_LOGIN_MAX : 5, defined('RATE_LIMIT_LOGIN_LOCKOUT_SEC') ? RATE_LIMIT_LOGIN_LOCKOUT_SEC : 900, $ip);
+    checkRateLimit('login_user', defined('RATE_LIMIT_LOGIN_MAX') ? RATE_LIMIT_LOGIN_MAX : 5, defined('RATE_LIMIT_LOGIN_LOCKOUT_SEC') ? RATE_LIMIT_LOGIN_LOCKOUT_SEC : 900, 'usr_' . md5(strtolower($input)));
 
-    if ($remaining <= 0) {
-        return ['success' => false, 'message' => 'Too many failed attempts. Account has been locked for 1 hour for security.'];
+    // Re-check lockout to give accurate message
+    $recheck = checkLoginAttemptLockout($input, $ip);
+    if ($recheck['locked']) {
+        return ['success' => false, 'message' => $recheck['message']];
     }
 
+    $rem = $recheck['remaining_attempts'];
     return [
         'success' => false,
-        'message' => "Invalid username/email or password. ($remaining attempts remaining before lockout)"
+        'message' => "Invalid username/email or password. ({$rem} attempt(s) remaining before security lockout)"
     ];
 }
 

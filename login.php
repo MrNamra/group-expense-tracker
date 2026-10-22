@@ -58,7 +58,12 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <div class="form-group">
-                <label class="form-label">Password</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <label class="form-label" style="margin-bottom: 0;">Password</label>
+                    <a href="forgot_password" style="font-size: 0.8rem; color: var(--color-primary); font-weight: 700; text-decoration: underline;" id="link-forgot-password">
+                        Forgot Password?
+                    </a>
+                </div>
                 <input type="password" name="password" class="form-control" placeholder="Enter your password" required>
             </div>
 

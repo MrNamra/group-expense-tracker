@@ -170,6 +170,22 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                         <span style="font-size:0.8rem; font-weight:700; color:#16a34a; background:#dcfce7; padding:0.2rem 0.5rem; border-radius:4px; border:1px solid #86efac;">Active</span>
                     </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; border:1.5px solid var(--border-ink); padding:0.6rem 0.85rem; border-radius:var(--radius-sm);">
+                        <div>
+                            <strong>6. Rate Limiting & Brute-Force Shield</strong>
+                            <div style="font-size:0.78rem; color:var(--text-muted);">Table <code>rate_limits</code> for IP sliding window throttling & login lockout</div>
+                        </div>
+                        <span style="font-size:0.8rem; font-weight:700; color:#16a34a; background:#dcfce7; padding:0.2rem 0.5rem; border-radius:4px; border:1px solid #86efac;">Active</span>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; border:1.5px solid var(--border-ink); padding:0.6rem 0.85rem; border-radius:var(--radius-sm);">
+                        <div>
+                            <strong>7. Self-Service Password Recovery</strong>
+                            <div style="font-size:0.78rem; color:var(--text-muted);">Table <code>password_resets</code> for 1-hour secure password tokens</div>
+                        </div>
+                        <span style="font-size:0.8rem; font-weight:700; color:#16a34a; background:#dcfce7; padding:0.2rem 0.5rem; border-radius:4px; border:1px solid #86efac;">Active</span>
+                    </div>
                 </div>
             </div>
 

@@ -7,6 +7,19 @@
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $filePath = __DIR__ . $uri;
 
+// PWA Headers & File Routing
+if ($uri === '/manifest.webmanifest' && file_exists(__DIR__ . '/manifest.webmanifest')) {
+    header('Content-Type: application/manifest+json; charset=utf-8');
+    readfile(__DIR__ . '/manifest.webmanifest');
+    exit;
+}
+if ($uri === '/sw.js' && file_exists(__DIR__ . '/sw.js')) {
+    header('Content-Type: application/javascript; charset=utf-8');
+    header('Service-Worker-Allowed: /');
+    readfile(__DIR__ . '/sw.js');
+    exit;
+}
+
 // Serve static assets directly (CSS, JS, images, fonts, etc.)
 if ($uri !== '/' && file_exists($filePath) && !is_dir($filePath)) {
     return false;

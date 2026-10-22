@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>You're Offline | SplitWise PRO</title>
+    <meta name="theme-color" content="#8b5cf6">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1.5rem;
+            background: var(--bg-main, #f8fafc);
+            font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+        }
+        .offline-card {
+            background: #ffffff;
+            border: 2.5px solid #0f172a;
+            border-radius: 18px;
+            box-shadow: 4px 4px 0px #0f172a;
+            max-width: 480px;
+            width: 100%;
+            padding: 2.5rem 2rem;
+            text-align: center;
+        }
+        .offline-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: #fee2e2;
+            color: #b91c1c;
+            border: 1.5px solid #f87171;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            margin-bottom: 1.25rem;
+        }
+        .offline-icon {
+            font-size: 4rem;
+            margin-bottom: 0.8rem;
+            animation: pulse 2s infinite ease-in-out;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+        }
+        .offline-title {
+            font-size: 1.8rem;
+            font-weight: 800;
+            margin: 0 0 0.6rem 0;
+            color: #0f172a;
+        }
+        .offline-desc {
+            color: #64748b;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin: 0 0 1.8rem 0;
+        }
+        .btn-retry {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            background: #6d28d9;
+            color: #ffffff;
+            font-weight: 700;
+            padding: 0.85rem 1.75rem;
+            border-radius: 12px;
+            border: 2px solid #0f172a;
+            box-shadow: 2px 2px 0px #0f172a;
+            font-size: 1rem;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .btn-retry:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 4px 4px 0px #0f172a;
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-card">
+        <div class="offline-icon">📡</div>
+        <div class="offline-badge">
+            <span>●</span> No Internet Connection
+        </div>
+        <h1 class="offline-title">You're Currently Offline</h1>
+        <p class="offline-desc">
+            It looks like your device is disconnected from the internet. SplitWise PRO will automatically reconnect and sync your shared expense balances once your connection is restored.
+        </p>
+
+        <div>
+            <button class="btn-retry" onclick="window.location.reload()">
+                <span>🔄</span> Check Connection & Retry
+            </button>
+        </div>
+
+        <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 1.75rem; margin-bottom: 0;">
+            💡 SplitWise PRO Progressive Web App (PWA) Mode
+        </p>
+    </div>
+
+    <script>
+        // Auto-reload as soon as internet connection returns
+        window.addEventListener('online', () => {
+            window.location.reload();
+        });
+    </script>
+</body>
+</html>

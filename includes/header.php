@@ -1,6 +1,11 @@
 <?php
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/auth.php';
+
+// Apply HTTP security headers & global request throttling
+applySecurityHeaders();
+enforceGlobalRateLimit();
 
 $currentUser = getCurrentUser();
 $csrfToken = generateCSRFToken();
@@ -22,6 +27,16 @@ $ogImage = $canonicalBase . '/og-image.png';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
+    <!-- ── Progressive Web App (PWA) ── -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#8b5cf6">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SplitWise PRO">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <script src="js/pwa.js" defer></script>
+
     <!-- ── Primary SEO Meta Tags ── -->
     <title><?= e($title) ?></title>
     <meta name="title"       content="<?= e($title) ?>">
@@ -29,7 +44,6 @@ $ogImage = $canonicalBase . '/og-image.png';
     <meta name="keywords"    content="<?= e($metaKW) ?>">
     <meta name="author"      content="SplitWise PRO">
     <meta name="robots"      content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
-    <meta name="theme-color" content="#8b5cf6">
     <meta name="language"    content="English">
     <meta name="revisit-after" content="7 days">
 
@@ -119,9 +133,23 @@ $ogImage = $canonicalBase . '/og-image.png';
                 <a href="login" class="btn btn-secondary btn-sm" id="nav-link-login">Login</a>
                 <a href="register" class="btn btn-primary btn-sm" id="nav-link-register">Register</a>
             <?php endif; ?>
+            <button type="button" class="btn btn-secondary btn-sm" id="pwa-install-btn" style="display:none; background:#ecfdf5; border-color:#10b981; color:#059669; font-weight:700;" onclick="installPWA()" title="Install App to your device">
+                📲 Install App
+            </button>
         </nav>
     </div>
 </header>
+
+<!-- Floating PWA Install Toast for Mobile/Desktop -->
+<div id="pwa-install-banner" style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:9999; background:#ffffff; border:2.5px solid var(--border-ink); border-radius:var(--radius-md); box-shadow:4px 4px 0px var(--border-ink); padding:0.75rem 1rem; align-items:center; gap:0.75rem; max-width:92%; width:420px;">
+    <img src="icons/icon-192.png" alt="SplitWise PRO" style="width:38px; height:38px; border-radius:8px; border:1.5px solid var(--border-ink);">
+    <div style="flex:1;">
+        <div style="font-weight:800; font-size:0.88rem; color:var(--text-main);">Install SplitWise PRO</div>
+        <div style="font-size:0.75rem; color:var(--text-muted);">Install for instant offline bill splitting</div>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" onclick="installPWA()" style="padding:0.35rem 0.75rem; font-size:0.8rem; background:#10b981; border-color:var(--border-ink);">Install</button>
+    <button type="button" onclick="dismissPWABanner()" style="background:none; border:none; cursor:pointer; font-size:1.1rem; color:var(--text-muted); padding:0.2rem;" aria-label="Dismiss">✕</button>
+</div>
 
 <?php if (isImpersonating()): ?>
     <div style="background:#fef08a; border-bottom:2px solid var(--border-ink); padding:0.5rem 1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; font-size:0.85rem; font-weight:700; z-index:99; position:relative;">

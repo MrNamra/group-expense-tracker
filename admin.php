@@ -29,7 +29,7 @@ requireAdmin();
 
 $currentUser = getCurrentUser();
 $csrfToken   = generateCSRFToken();
-$validTabs = ['overview', 'apps', 'users', 'groups', 'expenses'];
+$validTabs = ['overview', 'apps', 'users', 'groups', 'expenses', 'security'];
 $activeTab = $_GET['tab'] ?? 'overview';
 if (!in_array($activeTab, $validTabs, true)) {
     $activeTab = 'overview';
@@ -81,6 +81,45 @@ if (isset($_GET['action']) && $_GET['action'] === 'reset_apps') {
     exit;
 }
 
+// 5. Unlock Rate Limit / Lift Security Block
+if (isset($_GET['action']) && $_GET['action'] === 'unlock_rate_limit') {
+    $ident = trim($_GET['identifier'] ?? '');
+    if (!empty($ident)) {
+        unlockRateLimitIdentifier($ident);
+        header("Location: admin?tab=security&msg=" . urlencode("Rate limit & lockout lifted for {$ident}."));
+        exit;
+    }
+}
+
+// 6. Clear Expired Rate Limits
+if (isset($_GET['action']) && $_GET['action'] === 'clear_rate_limits') {
+    clearExpiredRateLimits();
+    header("Location: admin?tab=security&msg=" . urlencode("Old rate limit logs successfully cleared."));
+    exit;
+}
+
+// 7. Revoke Password Reset Token
+if (isset($_GET['action']) && $_GET['action'] === 'revoke_reset') {
+    $resetId = (int)($_GET['id'] ?? 0);
+    if ($resetId > 0) {
+        $pdo = getDBConnection();
+        $stmt = $pdo->prepare("UPDATE password_resets SET used = 1 WHERE id = :id");
+        $stmt->execute([':id' => $resetId]);
+        header("Location: admin?tab=security&msg=" . urlencode("Password reset token revoked."));
+        exit;
+    }
+}
+
+// 8. Clear Failed Login Attempts
+if (isset($_GET['action']) && $_GET['action'] === 'clear_failed_logins') {
+    $pdo = getDBConnection();
+    try {
+        $pdo->exec("DELETE FROM login_attempts");
+    } catch (Exception $e) {}
+    header("Location: admin?tab=security&msg=" . urlencode("Failed login attempts history cleared."));
+    exit;
+}
+
 // ── POST ACTIONS ────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -119,15 +158,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Change User Password
         if ($postAction === 'change_password') {
-            $uId     = (int)($_POST['user_id'] ?? 0);
-            $newPass = $_POST['new_password'] ?? '';
+            $uId         = (int)($_POST['user_id'] ?? 0);
+            $newPass     = $_POST['new_password'] ?? '';
+            $confirmPass = $_POST['confirm_password'] ?? '';
 
-            $res = changeUserPasswordByAdmin($uId, $newPass);
-            if ($res['success']) {
-                header("Location: admin?tab=users&msg=" . urlencode("Password for user #{$uId} has been successfully updated."));
+            if (!empty($confirmPass) && $newPass !== $confirmPass) {
+                $flashError = "Passwords do not match. Please re-enter.";
+                $activeTab = 'users';
+            } else {
+                $res = changeUserPasswordByAdmin($uId, $newPass);
+                if ($res['success']) {
+                    header("Location: admin?tab=users&msg=" . urlencode("Password for user #{$uId} has been successfully updated."));
+                    exit;
+                } else {
+                    $flashError = $res['message'];
+                    $activeTab = 'users';
+                }
+            }
+        }
+
+        // Generate One-Time Password Reset Link
+        if ($postAction === 'generate_user_reset') {
+            $uName = trim($_POST['username'] ?? '');
+            $res = createPasswordResetRequest($uName, getSecureClientIP());
+            if ($res['success'] && !empty($res['reset_url'])) {
+                header("Location: admin?tab=users&msg=" . urlencode("One-time reset link generated for " . $uName . ": " . $res['reset_url']));
                 exit;
             } else {
-                $flashError = $res['message'];
+                $flashError = $res['message'] ?? 'Could not generate reset link.';
                 $activeTab = 'users';
             }
         }
@@ -185,6 +243,24 @@ if ($activeTab === 'expenses' || $activeTab === 'overview') {
     $allExpenses = getAllExpensesForAdmin(100);
 }
 
+$rateLimitEntries = [];
+$passwordResets = [];
+$failedLoginAttempts = [];
+$blockedRateLimitsCount = 0;
+if ($activeTab === 'security' || $activeTab === 'overview') {
+    $rateLimitEntries = getAdminRateLimits(100);
+    $passwordResets   = getAdminPasswordResets(50);
+    foreach ($rateLimitEntries as $rle) {
+        if ((int)$rle['blocked_until'] > time()) {
+            $blockedRateLimitsCount++;
+        }
+    }
+    try {
+        $dbConn = getDBConnection();
+        $failedLoginAttempts = $dbConn->query("SELECT * FROM login_attempts ORDER BY id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {}
+}
+
 $pageTitle = "Admin Control Panel";
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -237,6 +313,14 @@ require_once __DIR__ . '/includes/header.php';
         </a>
         <a href="admin?tab=expenses" class="admin-tab-link <?= $activeTab === 'expenses' ? 'active' : '' ?>">
             🧾 Expenses (<?= $stats['total_expenses'] ?>)
+        </a>
+        <a href="admin?tab=security" class="admin-tab-link <?= $activeTab === 'security' ? 'active' : '' ?>">
+            🛡️ Security & Rate Limits
+            <?php if ($blockedRateLimitsCount > 0): ?>
+                <span style="background:#ef4444; color:#fff; font-size:0.68rem; font-weight:800; padding:0.1rem 0.45rem; border-radius:999px; margin-left:0.35rem;">
+                    <?= $blockedRateLimitsCount ?> BLOCKED
+                </span>
+            <?php endif; ?>
         </a>
     </div>
 
@@ -711,25 +795,42 @@ require_once __DIR__ . '/includes/header.php';
                     <h3 style="margin:0; font-size:1.2rem;">🔑 Set New Password</h3>
                     <button type="button" onclick="closeChangePasswordModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; font-weight:800;">&times;</button>
                 </div>
-                <form action="admin" method="POST">
+                <form action="admin" method="POST" id="adminPwdForm" onsubmit="return validateAdminPwdMatch()">
                     <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
                     <input type="hidden" name="action" value="change_password">
                     <input type="hidden" name="user_id" id="pwd_user_id" value="">
 
                     <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.8rem;">
-                        Setting a new password for <strong id="pwd_user_name_display" style="color:var(--text-main);"></strong>.
+                        Setting a new password for <strong id="pwd_user_name_display" style="color:var(--text-main);"></strong>. The user's login lockouts will be automatically cleared.
                     </p>
 
-                    <div class="form-group" style="margin-bottom:1.2rem;">
+                    <div class="form-group" style="margin-bottom:0.8rem;">
                         <label class="form-label" style="font-size:0.82rem; font-weight:700;">New Password *</label>
-                        <input type="password" name="new_password" class="form-control" placeholder="Enter at least 6 characters" minlength="6" required>
+                        <input type="password" name="new_password" id="admin_new_pwd" class="form-control" placeholder="Enter at least 6 characters" minlength="6" required>
                     </div>
 
-                    <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
+                    <div class="form-group" style="margin-bottom:1.2rem;">
+                        <label class="form-label" style="font-size:0.82rem; font-weight:700;">Confirm New Password *</label>
+                        <input type="password" name="confirm_password" id="admin_confirm_pwd" class="form-control" placeholder="Re-enter password" minlength="6" required>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
                         <button type="button" class="btn btn-secondary" onclick="closeChangePasswordModal()">Cancel</button>
                         <button type="submit" class="btn btn-primary">Update Password</button>
                     </div>
                 </form>
+
+                <div style="margin-top:1.25rem; border-top:1px dashed #cbd5e1; padding-top:0.85rem;">
+                    <form action="admin" method="POST" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
+                        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                        <input type="hidden" name="action" value="generate_user_reset">
+                        <input type="hidden" name="username" id="pwd_user_name_input" value="">
+                        <small style="color:var(--text-muted); font-size:0.78rem;">Prefer user self-service?</small>
+                        <button type="submit" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding:0.25rem 0.6rem;">
+                            🔗 Generate 1-Hour Reset Link
+                        </button>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -748,10 +849,22 @@ require_once __DIR__ . '/includes/header.php';
         function openChangePasswordModal(userId, username) {
             document.getElementById('pwd_user_id').value = userId;
             document.getElementById('pwd_user_name_display').innerText = username;
+            document.getElementById('pwd_user_name_input').value = username;
+            document.getElementById('admin_new_pwd').value = '';
+            document.getElementById('admin_confirm_pwd').value = '';
             document.getElementById('passwordModal').style.display = 'flex';
         }
         function closeChangePasswordModal() {
             document.getElementById('passwordModal').style.display = 'none';
+        }
+        function validateAdminPwdMatch() {
+            const p1 = document.getElementById('admin_new_pwd').value;
+            const p2 = document.getElementById('admin_confirm_pwd').value;
+            if (p1 !== p2) {
+                alert('Passwords do not match. Please re-enter.');
+                return false;
+            }
+            return true;
         }
         </script>
 
@@ -900,6 +1013,283 @@ require_once __DIR__ . '/includes/header.php';
                     </tbody>
                 </table>
             </div>
+        </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB 6: SECURITY & RATE LIMITING                                    -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <?php elseif ($activeTab === 'security'): ?>
+
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
+            <div>
+                <h2 style="font-size:1.4rem; margin:0; display:flex; align-items:center; gap:0.5rem;">
+                    <span>🛡️</span> Security & Rate Limiting Engine
+                </h2>
+                <p style="color:var(--text-muted); font-size:0.88rem; margin:0.25rem 0 0 0;">
+                    Real-time brute-force defense, IP rate limiting, active lockouts, and password recovery tokens.
+                </p>
+            </div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <a href="admin?action=clear_rate_limits" class="btn btn-secondary btn-sm" onclick="return confirm('Clear expired rate limit logs?');">
+                    🧹 Clear Expired Logs
+                </a>
+                <a href="admin?action=clear_failed_logins" class="btn btn-secondary btn-sm" onclick="return confirm('Clear all recorded failed login attempts?');">
+                    🧹 Clear Failed Logins
+                </a>
+            </div>
+        </div>
+
+        <!-- Security Metrics Grid -->
+        <div class="admin-stats-grid" style="margin-bottom:1.5rem;">
+            <div class="admin-stat-card">
+                <div class="admin-stat-top">
+                    <span class="admin-stat-label">Active Limit Trackers</span>
+                    <div class="admin-stat-icon">📊</div>
+                </div>
+                <div class="admin-stat-number"><?= count($rateLimitEntries) ?></div>
+                <span style="font-size:0.75rem; color:var(--text-dim);">Tracked IP & action windows</span>
+            </div>
+
+            <div class="admin-stat-card" style="<?= $blockedRateLimitsCount > 0 ? 'border-color:#ef4444; background:#fff5f5;' : '' ?>">
+                <div class="admin-stat-top">
+                    <span class="admin-stat-label">Currently Blocked</span>
+                    <div class="admin-stat-icon">🚫</div>
+                </div>
+                <div class="admin-stat-number" style="<?= $blockedRateLimitsCount > 0 ? 'color:#dc2626;' : '' ?>">
+                    <?= $blockedRateLimitsCount ?>
+                </div>
+                <span style="font-size:0.75rem; color:var(--text-dim);">IPs / Accounts under temporary lockout</span>
+            </div>
+
+            <div class="admin-stat-card">
+                <div class="admin-stat-top">
+                    <span class="admin-stat-label">Password Reset Tokens</span>
+                    <div class="admin-stat-icon">🔑</div>
+                </div>
+                <div class="admin-stat-number"><?= count($passwordResets) ?></div>
+                <span style="font-size:0.75rem; color:var(--text-dim);">Self-service recovery requests</span>
+            </div>
+
+            <div class="admin-stat-card">
+                <div class="admin-stat-top">
+                    <span class="admin-stat-label">Failed Login Attempts</span>
+                    <div class="admin-stat-icon">⚠️</div>
+                </div>
+                <div class="admin-stat-number"><?= count($failedLoginAttempts) ?></div>
+                <span style="font-size:0.75rem; color:var(--text-dim);">Logged credential failures</span>
+            </div>
+        </div>
+
+        <!-- Card 1: Active Rate Limits -->
+        <div class="admin-table-container" style="margin-bottom:2rem;">
+            <div class="admin-table-header">
+                <div>
+                    <h3 style="margin:0; font-size:1.1rem;">⚡ Active Rate Limits & IP Throttles</h3>
+                    <small style="color:var(--text-muted);">Sliding window request throttling across HTTP, login, registration, and reset endpoints</small>
+                </div>
+            </div>
+
+            <?php if (empty($rateLimitEntries)): ?>
+                <div style="padding:2.5rem; text-align:center; color:var(--text-muted);">
+                    <div style="font-size:2rem; margin-bottom:0.5rem;">🟢</div>
+                    <strong>No active rate limit blocks.</strong>
+                    <p style="margin:0.25rem 0 0 0; font-size:0.85rem;">All IP addresses and users are operating within normal traffic thresholds.</p>
+                </div>
+            <?php else: ?>
+                <div style="overflow-x:auto;">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Target / Identifier</th>
+                                <th>Action Key</th>
+                                <th>Hit Count</th>
+                                <th>First Hit</th>
+                                <th>Status</th>
+                                <th style="text-align:right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($rateLimitEntries as $r): 
+                                $isBlocked = ((int)$r['blocked_until'] > time());
+                                $remSec = $isBlocked ? ((int)$r['blocked_until'] - time()) : 0;
+                            ?>
+                                <tr style="<?= $isBlocked ? 'background:#fff5f5;' : '' ?>">
+                                    <td>
+                                        <strong><?= e($r['identifier']) ?></strong>
+                                    </td>
+                                    <td>
+                                        <code style="background:#f1f5f9; padding:0.2rem 0.45rem; border-radius:4px; font-size:0.82rem; border:1px solid #cbd5e1;">
+                                            <?= e($r['action_key']) ?>
+                                        </code>
+                                    </td>
+                                    <td>
+                                        <strong><?= (int)$r['hit_count'] ?></strong> hits
+                                    </td>
+                                    <td style="font-size:0.8rem; color:var(--text-dim); white-space:nowrap;">
+                                        <?= date('M d, H:i:s', $r['first_hit_at']) ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($isBlocked): ?>
+                                            <span style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; padding:0.2rem 0.55rem; border-radius:4px; font-weight:800; font-size:0.75rem;">
+                                                🔴 BLOCKED (<?= $remSec ?>s remaining)
+                                            </span>
+                                        <?php else: ?>
+                                            <span style="background:#dcfce7; color:#15803d; border:1px solid #86efac; padding:0.2rem 0.55rem; border-radius:4px; font-weight:700; font-size:0.75rem;">
+                                                🟢 Normal
+                                            </span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td style="text-align:right;">
+                                        <a href="admin?action=unlock_rate_limit&identifier=<?= urlencode($r['identifier']) ?>" 
+                                           class="btn btn-secondary btn-sm" 
+                                           style="font-size:0.75rem; padding:0.25rem 0.6rem;"
+                                           title="Lift block and reset counters">
+                                            🔓 Unlock / Reset
+                                        </a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- Card 2: Password Reset Tokens -->
+        <div class="admin-table-container" style="margin-bottom:2rem;">
+            <div class="admin-table-header">
+                <div>
+                    <h3 style="margin:0; font-size:1.1rem;">🔑 Self-Service Password Reset Tokens</h3>
+                    <small style="color:var(--text-muted);">Inspect, copy direct reset links, or revoke active password recovery tokens</small>
+                </div>
+            </div>
+
+            <?php if (empty($passwordResets)): ?>
+                <div style="padding:2rem; text-align:center; color:var(--text-muted);">
+                    No password reset requests recorded yet.
+                </div>
+            <?php else: ?>
+                <div style="overflow-x:auto;">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>User Account</th>
+                                <th>Client IP</th>
+                                <th>Requested At</th>
+                                <th>Expires At</th>
+                                <th>Status</th>
+                                <th style="text-align:right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php 
+                            $baseUrl = rtrim(defined('APP_URL') ? APP_URL : 'https://expenses.freedev.app', '/');
+                            if (isset($_SERVER['HTTP_HOST']) && (strpos($_SERVER['HTTP_HOST'], 'localhost') !== false || strpos($_SERVER['HTTP_HOST'], '127.0.0.1') !== false)) {
+                                $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                                $baseUrl = $proto . '://' . $_SERVER['HTTP_HOST'];
+                            }
+                            foreach ($passwordResets as $pr): 
+                                $isExpired = (strtotime($pr['expires_at']) < time());
+                                $isUsed = ((int)$pr['used'] === 1);
+                                $directUrl = $baseUrl . '/reset_password?token=' . urlencode($pr['token']);
+                            ?>
+                                <tr>
+                                    <td>
+                                        <strong><?= e($pr['username']) ?></strong>
+                                        <small style="display:block; color:var(--text-dim);"><?= e($pr['email']) ?></small>
+                                    </td>
+                                    <td><?= e($pr['ip_address']) ?></td>
+                                    <td style="font-size:0.8rem; color:var(--text-dim); white-space:nowrap;">
+                                        <?= date('M d, H:i:s', strtotime($pr['created_at'])) ?>
+                                    </td>
+                                    <td style="font-size:0.8rem; color:var(--text-dim); white-space:nowrap;">
+                                        <?= date('M d, H:i:s', strtotime($pr['expires_at'])) ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($isUsed): ?>
+                                            <span style="background:#f1f5f9; color:#64748b; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.75rem; font-weight:700;">
+                                                ⚪ Used
+                                            </span>
+                                        <?php elseif ($isExpired): ?>
+                                            <span style="background:#fee2e2; color:#b91c1c; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.75rem; font-weight:700;">
+                                                ⚠️ Expired
+                                            </span>
+                                        <?php else: ?>
+                                            <span style="background:#dcfce7; color:#15803d; border:1px solid #86efac; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.75rem; font-weight:800;">
+                                                🟢 Active (Pending)
+                                            </span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td style="text-align:right; white-space:nowrap;">
+                                        <?php if (!$isUsed && !$isExpired): ?>
+                                            <button type="button" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding:0.25rem 0.5rem;"
+                                                    onclick="navigator.clipboard.writeText('<?= e($directUrl) ?>'); alert('Reset link copied to clipboard!');"
+                                                    title="Copy One-Time Reset URL">
+                                                📋 Copy Link
+                                            </button>
+                                            <a href="admin?action=revoke_reset&id=<?= $pr['id'] ?>" class="btn btn-danger btn-sm" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="return confirm('Revoke this reset token?');" title="Revoke Token">
+                                                ❌ Revoke
+                                            </a>
+                                        <?php else: ?>
+                                            <span style="font-size:0.75rem; color:var(--text-dim);">Inactive</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- Card 3: Failed Login Attempts -->
+        <div class="admin-table-container">
+            <div class="admin-table-header">
+                <div>
+                    <h3 style="margin:0; font-size:1.1rem;">⚠️ Recent Failed Login Attempts</h3>
+                    <small style="color:var(--text-muted);">Monitored for automated credential stuffing and brute-force attacks</small>
+                </div>
+                <?php if (!empty($failedLoginAttempts)): ?>
+                    <a href="admin?action=clear_failed_logins" class="btn btn-secondary btn-sm" style="font-size:0.78rem;">Clear All</a>
+                <?php endif; ?>
+            </div>
+
+            <?php if (empty($failedLoginAttempts)): ?>
+                <div style="padding:2rem; text-align:center; color:var(--text-muted);">
+                    No failed login attempts recorded.
+                </div>
+            <?php else: ?>
+                <div style="overflow-x:auto;">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Input Entered (Username / Email)</th>
+                                <th>IP Address</th>
+                                <th>Timestamp</th>
+                                <th style="text-align:right;">Quick Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($failedLoginAttempts as $fla): ?>
+                                <tr>
+                                    <td><strong style="color:#b91c1c;"><?= e($fla['username_input']) ?></strong></td>
+                                    <td><code><?= e($fla['ip_address']) ?></code></td>
+                                    <td style="font-size:0.8rem; color:var(--text-dim); white-space:nowrap;">
+                                        <?= date('M d, Y H:i:s', strtotime($fla['attempt_time'])) ?>
+                                    </td>
+                                    <td style="text-align:right;">
+                                        <a href="admin?action=unlock_rate_limit&identifier=<?= urlencode($fla['ip_address']) ?>" 
+                                           class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding:0.25rem 0.5rem;"
+                                           title="Ensure this IP is not blocked">
+                                            🔓 Unlock IP
+                                        </a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
         </div>
 
     <?php endif; ?>

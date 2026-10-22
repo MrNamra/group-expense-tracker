@@ -39,7 +39,23 @@ define('SUPPORTED_CURRENCIES', [
 
 // Session & Security Settings
 if (session_status() === PHP_SESSION_NONE) {
+    // Ensure session save path is writable across different environments
+    $sessPath = session_save_path();
+    if (empty($sessPath) || !@is_writable($sessPath)) {
+        @ini_set('session.save_path', sys_get_temp_dir());
+    }
     ini_set('session.cookie_httponly', 1);
     ini_set('session.use_only_cookies', 1);
+    if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+        ini_set('session.cookie_secure', 1);
+    }
     session_start();
 }
+
+// Rate Limiting & Security Configuration
+define('ENABLE_RATE_LIMITING', true);
+define('RATE_LIMIT_GLOBAL_MAX', 150);      // Max requests per minute per IP
+define('RATE_LIMIT_LOGIN_MAX', 5);         // Max failed login attempts before lockout
+define('RATE_LIMIT_LOGIN_LOCKOUT_SEC', 900); // 15 minutes lockout duration
+define('RATE_LIMIT_PASSWORD_RESET_MAX', 3); // Max reset requests per 15 minutes
+

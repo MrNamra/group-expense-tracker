@@ -55,8 +55,18 @@ RewriteRule ^([^/]+)/?$ $1.php [L,QSA]
     ExpiresByType font/woff2           "access plus 1 year"
 </IfModule>
 
-# ── Protect sensitive files ───────────────────────────────────────────────────
-<FilesMatch "\.(sqlite|sql|env|log|json|md|git)$">
+# ── PWA MIME Types ───────────────────────────────────────────────────────────
+AddType application/manifest+json .webmanifest
+AddType application/manifest+json .json
+
+# ── Protect sensitive files (whitelist manifest.json/webmanifest) ─────────────
+<FilesMatch "\.(sqlite|sql|env|log|md|git)$">
     Order Deny,Allow
     Deny from all
 </FilesMatch>
+
+<FilesMatch "^composer\.(json|lock)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+

@@ -866,6 +866,15 @@ function changeUserPasswordByAdmin(int $userId, string $newPassword): array {
         $hashed = password_hash($newPassword, PASSWORD_BCRYPT);
         $stmt = $db->prepare("UPDATE users SET password = :p WHERE id = :id");
         $stmt->execute([':p' => $hashed, ':id' => $userId]);
+
+        // Clear any active lockout for this user
+        $uStmt = $db->prepare("SELECT username FROM users WHERE id = :id");
+        $uStmt->execute([':id' => $userId]);
+        $uname = $uStmt->fetchColumn();
+        if ($uname && function_exists('clearLoginLockout')) {
+            clearLoginLockout($uname, getSecureClientIP());
+        }
+
         return ['success' => true, 'message' => 'Password updated successfully.'];
     } catch (Exception $e) {
         return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
