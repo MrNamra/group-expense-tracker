@@ -77,8 +77,8 @@ require_once __DIR__ . '/includes/header.php';
                     <a href="group?id=<?= (int)$g['id'] ?>" class="btn btn-primary btn-sm" style="flex: 1;">
                         <span>👁️</span> View Group
                     </a>
-                    <a href="public?token=<?= e($g['share_token']) ?>" target="_blank" class="btn btn-secondary btn-sm" title="Open Public Link">
-                        <span>🔗</span> Public
+                    <a href="group?token=<?= e($g['share_token']) ?>" target="_blank" class="btn btn-secondary btn-sm" title="Open Share Link">
+                        <span>🔗</span> Share Link
                     </a>
                 </div>
             </div>

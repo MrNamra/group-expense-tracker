@@ -195,6 +195,25 @@ function isGroupOwner(int $groupId, ?int $userId = null): bool {
     return (bool) $stmt->fetch();
 }
 
+// Check if user is an owner, admin, or linked participant in the group
+function isGroupMember(int $groupId, ?int $userId = null): bool {
+    if ($userId === null) {
+        if (!isLoggedIn()) return false;
+        $userId = (int)$_SESSION['user_id'];
+    }
+    if (isGroupOwner($groupId, $userId) || isAdmin($userId)) {
+        return true;
+    }
+    $db = getDBConnection();
+    try {
+        $stmt = $db->prepare("SELECT id FROM participants WHERE group_id = :group_id AND user_id = :user_id LIMIT 1");
+        $stmt->execute([':group_id' => $groupId, ':user_id' => $userId]);
+        return (bool) $stmt->fetch();
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
 // ─── ADMIN & IMPERSONATION SYSTEM ─────────────────────────────────────────
 
 // Check if a user is an administrator

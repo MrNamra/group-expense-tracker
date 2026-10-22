@@ -928,8 +928,8 @@ require_once __DIR__ . '/includes/header.php';
                                         <a href="group?id=<?= $g['id'] ?>" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding:0.25rem 0.5rem;" target="_blank">
                                             👁️ Open Group
                                         </a>
-                                        <a href="public?token=<?= e($g['share_token']) ?>" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding:0.25rem 0.5rem;" target="_blank">
-                                            🔗 Public Link
+                                        <a href="group?token=<?= e($g['share_token']) ?>" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding:0.25rem 0.5rem;" target="_blank">
+                                            🔗 Share Link
                                         </a>
                                         <form action="admin" method="POST" style="display:inline;" onsubmit="return confirm('Delete group <?= e($g['name']) ?> and all expenses?');">
                                             <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">

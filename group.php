@@ -3,15 +3,81 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 
 $groupId = (int) ($_GET['id'] ?? 0);
-$group = getGroupById($groupId);
+$token = trim($_GET['token'] ?? '');
+
+// 1. Resolve group: by token if provided, or by ID
+if ($groupId <= 0 && !empty($token)) {
+    $group = getGroupByToken($token);
+    if ($group) {
+        $groupId = (int)$group['id'];
+    }
+} elseif ($groupId > 0) {
+    $group = getGroupById($groupId);
+} else {
+    $group = null;
+}
 
 if (!$group) {
-    header("Location: dashboard?msg=" . urlencode("Group not found."));
+    require __DIR__ . '/404.php';
     exit;
 }
 
 $currentUser = getCurrentUser();
-$isOwner = $currentUser && isGroupOwner($groupId, $currentUser['id']);
+$isOwner = $currentUser && isGroupOwner($groupId, (int)$currentUser['id']);
+$isMember = $currentUser && isGroupMember($groupId, (int)$currentUser['id']);
+$isAdminUser = isAdmin();
+
+// 2. Token verification
+$hasValidToken = false;
+if (!empty($token) && hash_equals($group['share_token'], $token)) {
+    $hasValidToken = true;
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $_SESSION['authorized_groups'][$groupId] = $group['share_token'];
+    }
+} elseif (!empty($_SESSION['authorized_groups'][$groupId]) && hash_equals($group['share_token'], $_SESSION['authorized_groups'][$groupId])) {
+    $hasValidToken = true;
+}
+
+// 3. Strict Privacy & Authorization Check
+// Access is ONLY permitted if:
+// - User is the group Owner
+// - User is a registered group Member/Participant
+// - User is an Admin
+// - OR User accessed via the valid shared token
+if (!$isOwner && !$isMember && !$isAdminUser && !$hasValidToken) {
+    http_response_code(403);
+    $pageTitle = "Private Group | Access Denied";
+    $pageDescription = "This group is private and requires a valid share link to access.";
+    require_once __DIR__ . '/includes/header.php';
+    ?>
+    <div class="auth-container" style="max-width: 520px; text-align: center; margin: 4rem auto;">
+        <div class="card" style="padding: 3rem 2rem;">
+            <div style="font-size: 3.8rem; margin-bottom: 1rem; filter: drop-shadow(0 4px 12px rgba(239, 68, 68, 0.25));">🔒</div>
+            <h1 style="font-size: 1.6rem; font-weight: 800; margin-bottom: 0.5rem; color: var(--text-main);">Private Group</h1>
+            <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.6; margin-bottom: 2rem;">
+                This group is private. You can only access it if the owner shared the link with you. Please request the invite or share link from the group creator.
+            </p>
+            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <?php if (isLoggedIn()): ?>
+                    <a href="dashboard" class="btn btn-primary">
+                        <span>🏠</span> Return to Dashboard
+                    </a>
+                <?php else: ?>
+                    <a href="login" class="btn btn-primary">
+                        <span>🔑</span> Log In
+                    </a>
+                    <a href="register" class="btn btn-secondary">
+                        <span>✨</span> Register
+                    </a>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+    <?php
+    require_once __DIR__ . '/includes/footer.php';
+    exit;
+}
+
 $msg = $_GET['msg'] ?? '';
 $error = $_GET['error'] ?? '';
 
@@ -26,7 +92,14 @@ foreach ($participants as $p) {
     $participantUpiMap[$p['name']] = $p['upi_id'] ?? '';
 }
 
-$publicUrl = APP_URL . "/public?token=" . urlencode($group['share_token']);
+// Compute dynamic share URL (works seamlessly in localhost and production)
+$proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+$httpHost = $_SERVER['HTTP_HOST'] ?? 'localhost:8000';
+$baseHost = (strpos($httpHost, 'localhost') !== false || strpos($httpHost, '127.0.0.1') !== false) 
+    ? ($proto . $httpHost) 
+    : rtrim(APP_URL, '/');
+
+$shareUrl = $baseHost . "/group?token=" . urlencode($group['share_token']);
 
 $pageTitle = $group['name'];
 $pageDescription = "Track expenses, split bills, and view debt settlements for " . $group['name'] . ".";
@@ -42,6 +115,10 @@ require_once __DIR__ . '/includes/header.php';
                 <h1 style="font-size: 1.6rem; font-weight: 800; margin: 0;"><?= e($group['name']) ?></h1>
                 <?php if ($isOwner): ?>
                     <span class="badge-owner">You are Owner</span>
+                <?php elseif ($isAdminUser): ?>
+                    <span class="badge-owner" style="background:#7c3aed; color:#fff; border-color:#6d28d9;">Admin Access</span>
+                <?php else: ?>
+                    <span class="badge-owner" style="background: rgba(16, 185, 129, 0.15); color: #059669; border-color: rgba(16, 185, 129, 0.35);">Shared Member View</span>
                 <?php endif; ?>
             </div>
             <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.5rem;"><?= e($group['description'] ?: 'No description.') ?></p>
@@ -50,9 +127,9 @@ require_once __DIR__ . '/includes/header.php';
 
         <div class="banner-actions">
             <div class="share-box">
-                <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); white-space: nowrap;">Share:</span>
-                <input type="text" id="shareUrlInput" class="share-input" value="<?= e($publicUrl) ?>" readonly>
-                <button type="button" id="copyShareUrlBtn" class="btn btn-secondary btn-sm">📋</button>
+                <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); white-space: nowrap;">Share Link:</span>
+                <input type="text" id="shareUrlInput" class="share-input" value="<?= e($shareUrl) ?>" readonly>
+                <button type="button" id="copyShareUrlBtn" class="btn btn-secondary btn-sm" title="Copy share link">📋</button>
             </div>
 
             <?php if ($isOwner): ?>
