@@ -20,6 +20,10 @@ $path          = strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
 $canonicalUrl  = $canonicalBase . $path;
 
 $ogImage = $canonicalBase . '/og-image.png';
+
+// Dynamic base path for PWA assets to work smoothly across domain roots and subfolders
+$appBasePath   = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/\\');
+$manifestHref  = ($appBasePath !== '' ? $appBasePath : '') . '/manifest.webmanifest';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -28,7 +32,7 @@ $ogImage = $canonicalBase . '/og-image.png';
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
     <!-- ── Progressive Web App (PWA) ── -->
-    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="manifest" href="<?= $manifestHref ?>" crossorigin="use-credentials">
     <meta name="theme-color" content="#8b5cf6">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">

@@ -8,21 +8,47 @@ $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $filePath = __DIR__ . $uri;
 
 // PWA Headers & File Routing
-if ($uri === '/manifest.webmanifest' && file_exists(__DIR__ . '/manifest.webmanifest')) {
+$cleanName = basename($uri);
+if (($cleanName === 'manifest.webmanifest' || $cleanName === 'manifest.json') && (file_exists(__DIR__ . '/manifest.webmanifest') || file_exists(__DIR__ . '/manifest.json'))) {
+    $manifestFile = file_exists(__DIR__ . '/manifest.webmanifest') ? __DIR__ . '/manifest.webmanifest' : __DIR__ . '/manifest.json';
     header('Content-Type: application/manifest+json; charset=utf-8');
-    readfile(__DIR__ . '/manifest.webmanifest');
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Credentials: true');
+    header('Cache-Control: public, max-age=3600');
+    readfile($manifestFile);
     exit;
 }
-if ($uri === '/sw.js' && file_exists(__DIR__ . '/sw.js')) {
+if ($cleanName === 'sw.js' && file_exists(__DIR__ . '/sw.js')) {
     header('Content-Type: application/javascript; charset=utf-8');
     header('Service-Worker-Allowed: /');
+    header('Cache-Control: no-cache, no-store, must-revalidate');
     readfile(__DIR__ . '/sw.js');
     exit;
 }
 
 // Serve static assets directly (CSS, JS, images, fonts, etc.)
 if ($uri !== '/' && file_exists($filePath) && !is_dir($filePath)) {
-    return false;
+    if (php_sapi_name() === 'cli-server' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)) {
+        return false;
+    }
+    $mimes = [
+        'css' => 'text/css; charset=utf-8',
+        'js' => 'application/javascript; charset=utf-8',
+        'json' => 'application/json; charset=utf-8',
+        'webmanifest' => 'application/manifest+json; charset=utf-8',
+        'png' => 'image/png',
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'svg' => 'image/svg+xml',
+        'ico' => 'image/x-icon',
+        'woff' => 'font/woff',
+        'woff2' => 'font/woff2'
+    ];
+    $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+    $mime = $mimes[$ext] ?? 'application/octet-stream';
+    header('Content-Type: ' . $mime);
+    readfile($filePath);
+    exit;
 }
 
 // Map root / or /dashboard to index.php

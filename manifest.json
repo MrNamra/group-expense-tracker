@@ -2,7 +2,7 @@
   "name": "SplitWise PRO - Group Expense Tracker",
   "short_name": "SplitWise PRO",
   "description": "Free group expense tracker, bill splitter, instant settlement calculations and UPI payments.",
-  "start_url": "./dashboard",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
@@ -54,7 +54,7 @@
       "name": "My Dashboard",
       "short_name": "Dashboard",
       "description": "View all your active expense groups",
-      "url": "./dashboard",
+      "url": "./",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
     }
   ]

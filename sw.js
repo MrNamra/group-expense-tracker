@@ -4,7 +4,7 @@
  * Provides offline resilience, static asset caching, and lightning-fast loading.
  */
 
-const CACHE_NAME = 'splitwise-pro-v1';
+const CACHE_NAME = 'splitwise-pro-v2';
 
 const STATIC_ASSETS = [
     './offline.html',
@@ -91,10 +91,13 @@ self.addEventListener('fetch', (event) => {
         caches.match(request).then((cachedResponse) => {
             const fetchPromise = fetch(request).then((networkResponse) => {
                 if (networkResponse && networkResponse.status === 200) {
-                    const responseClone = networkResponse.clone();
-                    caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(request, responseClone);
-                    });
+                    const contentType = networkResponse.headers.get('content-type') || '';
+                    if (!contentType.includes('text/html') || !request.url.match(/\.(css|js|png|jpg|jpeg|svg|ico|webmanifest|json|woff2?)$/i)) {
+                        const responseClone = networkResponse.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(request, responseClone);
+                        });
+                    }
                 }
                 return networkResponse;
             }).catch(() => null);

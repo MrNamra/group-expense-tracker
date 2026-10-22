@@ -26,6 +26,7 @@ function applySecurityHeaders(): void {
     
     // Content-Security-Policy (Permissive for Google Fonts, SVGs, QR codes, PWA)
     $csp = "default-src 'self' 'unsafe-inline' https: data:; " .
+           "manifest-src 'self'; " .
            "img-src 'self' data: https: blob:; " .
            "script-src 'self' 'unsafe-inline' https:; " .
            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " .

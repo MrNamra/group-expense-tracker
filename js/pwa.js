@@ -8,7 +8,10 @@
     // 1. Register Service Worker
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('sw.js', { scope: './' })
+            const manifestTag = document.querySelector('link[rel="manifest"]');
+            const manifestHref = manifestTag ? manifestTag.getAttribute('href') : 'manifest.webmanifest';
+            const swPath = manifestHref ? manifestHref.replace(/manifest\.(webmanifest|json).*$/, 'sw.js') : 'sw.js';
+            navigator.serviceWorker.register(swPath, { scope: './' })
                 .then((registration) => {
                     // Check for updates
                     registration.addEventListener('updatefound', () => {
